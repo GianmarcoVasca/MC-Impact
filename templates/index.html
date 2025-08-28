@@ -3,37 +3,64 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/jpeg" href="{{ url_for('favicon_jpg') }}" sizes="32x32" />
+    <link rel="shortcut icon" type="image/jpeg" href="{{ url_for('favicon_jpg') }}" />
     <title>MC-Impact — Interfaccia</title>
     <style>
-      body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; }
+      :root { --brand-bg:#f6f8fb; --brand-text:#1a1d21; --brand-accent:#2c7be5; }
+      body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: url('{{ url_for('bg_image') }}') center/cover fixed no-repeat; color: var(--brand-text); }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin: 0 auto; }
+      h1 { text-align:center; }
       .row { margin-bottom: 0.75rem; }
       .section { margin-top: 1.25rem; padding-top: .25rem; }
       label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+      /* Allinea etichetta e campo sulla stessa riga dove richiesto */
+      .form-inline { display:flex; align-items:center; gap:.75rem; }
+      .form-inline label { display:inline-block; margin:0; white-space:nowrap; width: 240px; }
+      .form-inline input, .form-inline select { width: 160px; }
+      .form-inline .ctrl { width: 100px !important; }
+      /* Flag verticali */
+      .flags { display:grid; gap:.25rem; align-items:center; }
+      .flags label { display:grid; grid-template-columns: 240px 100px; align-items:center; margin:0; }
+      .flags select { width:100px !important; }
       input[type="file"], input[type="number"] { width: 100%; }
-      /* N fields narrower */
-      #man_N, #N, input[name="N"] { width: 160px !important; }
+      /* Larghezze: mantieni upload N a 160px, manuale compatto e uniforme */
+      #N, input[name="N"] { width: 160px !important; }
+      #man_N { width: 100px !important; }
+      #man_gdl { width: 100px !important; }
       /* In upload mode, allow longer placeholder for N */
       #section-upload #N { width: 360px !important; }
       .hint { color: #555; font-size: 0.9rem; }
       .actions { margin-top: 1rem; }
-      button { padding: 0.6rem 1rem; border: 0; border-radius: 6px; background: #2c7be5; color: #fff; cursor: pointer; }
+      button { padding: 0.6rem 1rem; border: 0; border-radius: 6px; background: var(--brand-accent); color: #fff; cursor: pointer; }
+      a { color: var(--brand-accent); }
+      .brand { display:flex; justify-content:center; align-items:center; gap:16px; margin: 0.25rem 0 1rem; }
+      /* Loghi unificati: cars dimensione standard, scritta metà */
+      .brand img { width:auto; display:block; }
+      .brand img:last-child { max-height: 140px; }
+      #brandLogo { max-height: 70px; }
       .flash { padding: .75rem; margin-bottom: 1rem; border-radius: 6px; }
       .flash.error { background: #fee; color: #900; border: 1px solid #f99; }
       .progress { margin-top: 1rem; background: #f1f3f5; border-radius: 8px; height: 18px; overflow: hidden; display:none; }
       .progress .bar { height: 100%; background: linear-gradient(90deg,#51cf66,#2f9e44); width: 0%; transition: width .2s ease; }
       .eta { margin-top: .5rem; color: #333; display:none; }
       /* Manual model grid */
-      .model-row { display:grid; grid-template-columns: 340px 200px 110px 300px 180px 60px; gap: 1.25rem; align-items:center; }
+      .model-row { display:grid; grid-template-columns: 300px 200px 100px 190px 120px 40px; gap: .3rem; align-items:center; }
       .model-row code{ font-size:0.95rem; word-break:break-all; }
-      .target-col{ margin-left:1rem; }
-      .target-col input{ width:160px; }
-      .vals { display:grid; grid-template-columns: 150px 150px; gap:.75rem; }
-      .vals input { width: 150px; }
+      .target-col{ margin-left:0; min-width:150px; }
+      .target-col.hidden{ visibility:hidden; }
+      .target-col input{ width:98px; }
+      .vals { display:grid; grid-template-columns: 65px 65px; gap:.25rem; }
+      .vals input { width: 65px; }
     </style>
   </head>
   <body>
-    <h1>MC-Impact — Interfaccia Web</h1>
+    
+
+    <div class="brand">
+      <img id="brandLogo" src="{{ url_for('logo_scritta') }}" alt="Logo scritta">
+      <img src="{{ url_for('logo_cars') }}" alt="Logo cars">
+    </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -67,23 +94,23 @@
         </div>
 
         <div id="section-manual" style="display:none;">
-          <div class="row"><strong>Parametri dati.txt</strong></div>
-          <div class="row">
+          <div class="row"><strong>Parametri simulazione:</strong></div>
+          <div class="row form-inline">
             <label for="man_N">N (iterazioni)</label>
-            <input type="number" id="man_N" name="man_N" min="1" step="1" placeholder="Es. 100000" />
+            <input class="ctrl" type="number" id="man_N" name="man_N" min="1" step="1" placeholder="Es. 100000" />
           </div>
-          <div class="row">
-            <label for="man_gdl">gdl</label>
-            <select id="man_gdl" name="man_gdl">
+          <div class="row form-inline">
+            <label for="man_gdl">Gradi di Libertà</label>
+            <select class="ctrl" id="man_gdl" name="man_gdl">
               <option value="">—</option>
               <option value="2">2</option>
               <option value="3">3</option>
             </select>
           </div>
           <div class="row">
-            <label>Flag iniziali</label>
-            <div class="hint">Scegli "attivo" o "non attivo"</div>
-            <div>
+            <!-- flags -->
+            <!-- <div class="hint">Scegli "attivo" o "non attivo"</div> -->
+            <div class="flags">
               <label>cicloide
                 <select name="man_cicloide"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
               </label>
@@ -107,36 +134,37 @@
 
           <div class="row section"><strong>Parametri modello:</strong></div>
           <div id="datiRows">
-            <div class="row section"><em>- VEICOLO 1 -</em></div>
+            <div class="row section"><strong>- VEICOLO 1 -</strong></div>
             <div id="sec_vehicle1"></div>
-            <div class="row section"><em>- VEICOLO 2 -</em></div>
+            <div class="row section"><strong>- VEICOLO 2 -</strong></div>
             <div id="sec_vehicle2"></div>
 
-            <div class="row section"><em>- POST-URTI -</em></div>
+            <div class="row section"><strong>- POST-URTI -</strong></div>
             <div id="sec_post_cicloide" style="display:none;"></div>
             <div id="sec_post_nocicloide" style="display:none;"></div>
             <div id="sec_post_cicloide_av" style="display:none;"></div>
             <div id="sec_post_cicloide_nota" style="display:none;"></div>
 
-            <div class="row section"><em>- ENERGIA DI DEFORMAZIONE -</em></div>
+            <div class="row section"><strong>- ENERGIA DI DEFORMAZIONE -</strong></div>
             <div id="sec_energy_ees" style="display:none;"></div>
             <div id="sec_energy_ed" style="display:none;"></div>
 
-            <div class="row section"><em>- ANGOLI DI INGRESSO E USCITA -</em></div>
+            <div class="row section"><strong>- ANGOLI DI INGRESSO E USCITA -</strong></div>
             <div id="sec_angles"></div>
 
-            <div class="row section"><em>- COORDINATE BARICENTRICHE -</em> <span class="hint">Se gdl=2 e chiusura_triangoli=0, cicloide_avanzata=0, stima_PDOF=0 non vengono richieste (default ±2)</span></div>
+            <div class="row section"><strong>- COORDINATE BARICENTRICHE -</strong> <span class="hint">Se gdl=2 e chiusura_triangoli=0, cicloide_avanzata=0, stima_PDOF=0 non vengono richieste (default ±2)</span></div>
             <div id="sec_coords"></div>
           </div>
 
-          <div class="row" style="margin-top:1rem;"><strong>Parametri target</strong></div>
+          <div class="row" style="margin-top:1rem;"><strong>Parametri target:</strong></div>
           <div id="targetRows"></div>
         </div>
 
         <!-- Rimosso: Override di N iterazioni -->
 
-        <div class="actions">
-          <button id="btnRun" type="submit">Esegui Monte Carlo</button>
+        <div class="actions" style="display:flex; gap:.5rem; align-items:center;">
+          <button id="btnRun" type="submit">Esegui MonteCarlo</button>
+          <button id="btnCancel" type="button" style="display:none; background:#e03131;">Termina</button>
         </div>
       </form>
 
@@ -144,7 +172,8 @@
       <div id="eta" class="eta">Tempo rimanente stimato: <span id="etaText">—</span></div>
     </div>
 
-    <script>
+  <script>
+      // Tema: usiamo direttamente l'immagine di sfondo; niente campionamento colori JS
       const form = document.getElementById('mcForm');
       const btn = document.getElementById('btnRun');
       const progressBox = document.getElementById('progress');
@@ -153,13 +182,15 @@
       const etaText = document.getElementById('etaText');
       const secUpload = document.getElementById('section-upload');
       const secManual = document.getElementById('section-manual');
-      document.querySelectorAll('input[name="input_mode"]').forEach(r=>{
-        r.addEventListener('change',()=>{
-          const mode = document.querySelector('input[name="input_mode"]:checked').value;
-          if (mode==='manual'){ secManual.style.display='block'; secUpload.style.display='none'; }
-          else { secManual.style.display='none'; secUpload.style.display='block'; }
-        });
-      });
+      function updateMode(){
+        const modeEl = document.querySelector('input[name="input_mode"]:checked');
+        const mode = modeEl ? modeEl.value : 'upload';
+        if (mode==='manual'){ secManual.style.display='block'; secUpload.style.display='none'; }
+        else { secManual.style.display='none'; secUpload.style.display='block'; }
+      }
+      document.querySelectorAll('input[name="input_mode"]').forEach(r=>{ r.addEventListener('change', updateMode); });
+      // Applica lo stato iniziale
+      updateMode();
 
       function rowTemplate(prefix){
         return `
@@ -209,7 +240,7 @@
               <input name="man_dati_v1[]" placeholder="valore">
               <input name="man_dati_v2[]" placeholder="valore max" style="display:none;">
             </div>
-            <div class="target-col" ${withTarget?'' : 'style="display:none;"'}>
+            <div class="target-col ${withTarget?'' : 'hidden'}">
               ${withTarget ? `
                 <input type="hidden" name="man_target_name[]" value="${key}">
                 <input type="hidden" name="man_target_mode[]" value="single">
@@ -374,16 +405,27 @@
           const resp = await fetch('{{ url_for('start_async') }}', { method: 'POST', body: fd });
           const data = await resp.json();
           if (!resp.ok){ alert(data.error || 'Errore di avvio'); btn.disabled=false; return; }
-          const runId = data.run_id;
-          const t = setInterval(async ()=>{
+          const runId = data.run_id; window.currentRunId = runId; document.getElementById('btnCancel').style.display='inline-block';
+          window._mcPoll = setInterval(async ()=>{
             const r = await fetch(`/api/progress/${runId}`);
             if (!r.ok) return; const p = await r.json();
             const cur = p.current||0, tot=p.total||0; const pct = tot>0 ? Math.min(100, Math.floor(cur*100/tot)) : (p.done?100:0);
             bar.style.width = pct + '%'; etaText.textContent = fmtEta(p.eta_seconds);
-            if (p.done){ clearInterval(t); if (p.error){ alert('Errore: '+p.error); btn.disabled=false; return; } window.location.href = `/result/${runId}`; }
+            if (p.done){ clearInterval(window._mcPoll); document.getElementById('btnCancel').style.display='none'; window.currentRunId=null; if (p.error){ alert('Errore: '+p.error); btn.disabled=false; return; } window.location.href = `/result/${runId}`; }
           }, 500);
         } catch(err){ alert('Errore: '+err); btn.disabled=false; }
+      });
+      // Termina simulazione mantenendo i campi inseriti
+      document.getElementById('btnCancel').addEventListener('click', async ()=>{
+        if (!window.currentRunId) return;
+        try{ await fetch(`/api/cancel/${window.currentRunId}`, { method:'POST' }); }catch(e){}
+        if (window._mcPoll){ clearInterval(window._mcPoll); }
+        document.getElementById('btnCancel').style.display='none';
+        btn.disabled = false; etaText.textContent = "terminata";
       });
     </script>
   </body>
   </html>
+
+
+

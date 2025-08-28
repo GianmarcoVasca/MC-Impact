@@ -29,6 +29,37 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Stato di avanzamento delle esecuzioni asincrone
 PROGRESS: dict[str, dict] = {}
 
+# Unita' di misura di base per alcune variabili note
+UNITS: dict[str, str] = {
+    # Veicoli
+    "m1": "kg", "m2": "kg",
+    "l1": "m", "l2": "m", "p1": "m", "p2": "m",
+    # Post-urto
+    "d_post1": "m", "d_post2": "m",
+    "theta_post1": "deg", "theta_post2": "deg",
+    "f1": "", "f2": "",
+    # Cicloide nota / avanzata
+    "lunghezza_cicloide_1": "m", "lunghezza_cicloide_2": "m",
+    "x1_quiete": "m", "y1_quiete": "m", "x2_quiete": "m", "y2_quiete": "m",
+    # No-cicloide
+    "V1_post_Kmh": "km/h", "V2_post_Kmh": "km/h",
+    # Velocità in km/h (best summary)
+    "V1_pre": "Km/h", "V2_pre": "Km/h", "V1_post": "Km/h", "V2_post": "Km/h",
+    "omega1_post": "rad/s", "omega2_post": "rad/s",
+    "omega1_pre": "rad/s", "omega2_pre": "rad/s",
+    # Energia
+    "EES1_Kmh": "km/h", "EES2_Kmh": "km/h", "Ed_target": "J", "Ed": "J",
+    # Momenti d'inerzia
+    "J1": "Kg*m^2", "J2": "Kg*m^2",
+    # Angoli
+    "theta1_in": "deg", "theta1_out": "deg", "theta2_in": "deg", "theta2_out": "deg",
+    # Coordinate e lunghezze
+    "x1": "m", "y1": "m", "x2": "m", "y2": "m",
+    "cicloide1": "m", "cicloide2": "m",
+    # PDOF
+    "PDOF_stima": "deg", "PDOF_eff": "deg",
+}
+
 
 def run_simulation(dati_path: str, targets_path: str, override_N: int | None = None, progress_key: str | None = None):
     """Run the same Monte Carlo flow as main.py but without plots or prompts.
@@ -51,6 +82,10 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
 
     start_ts = time.time()
     for i in range(N):
+        # Check for async cancellation
+        if progress_key and PROGRESS.get(progress_key, {}).get("cancel"):
+            PROGRESS[progress_key] = {**PROGRESS.get(progress_key, {}), "done": True, "canceled": True}
+            raise RuntimeError("Esecuzione annullata dall'utente")
         p = genera_input_casuale(parametri)
         t = genera_input_casuale(targets)
         try:
@@ -136,6 +171,49 @@ def index():
         "has_default_targets": os.path.exists(os.path.join(BASE_DIR, "targets.txt")),
     }
     return render_template("index.html", defaults=defaults)
+
+
+@app.route("/logo.png")
+def logo():
+    """Backward-compat route: serve the historical single logo."""
+    path = os.path.join(BASE_DIR, "templates")
+    return send_from_directory(path, "logo.png", as_attachment=False)
+
+@app.route("/logo_scritta.png")
+def logo_scritta():
+    """Serve the left brand image (scritta)."""
+    path = os.path.join(BASE_DIR, "templates")
+    return send_from_directory(path, "logo_scritta.png", as_attachment=False)
+
+@app.route("/logo_cars.png")
+def logo_cars():
+    """Serve the right brand image (cars)."""
+    path = os.path.join(BASE_DIR, "templates")
+    return send_from_directory(path, "logo_cars.png", as_attachment=False)
+
+@app.route("/bg.png")
+def bg_image():
+    """Serve the background sample image placed under templates/sfondo.png"""
+    path = os.path.join(BASE_DIR, "templates")
+    return send_from_directory(path, "sfondo.png", as_attachment=False)
+
+# Favicon for all pages (served from templates/favicon.jpg)
+@app.route("/favicon.ico")
+def favicon():
+    # Many browsers auto-request /favicon.ico; redirect to our JPEG favicon
+    return redirect(url_for('favicon_jpg'))
+
+@app.route("/favicon.jpg")
+def favicon_jpg():
+    path = os.path.join(BASE_DIR, "templates")
+    return send_from_directory(path, "favicon.jpg", as_attachment=False, mimetype="image/jpeg")
+
+@app.route("/api/cancel/<run_id>", methods=["POST"])
+def api_cancel(run_id):
+    if run_id not in PROGRESS:
+        return jsonify({"error": "run non trovato"}), 404
+    PROGRESS[run_id] = {**PROGRESS.get(run_id, {}), "cancel": True}
+    return jsonify({"status": "cancelling"})
 
 
 @app.route("/run", methods=["POST"]) 
@@ -313,6 +391,7 @@ def run():
         variabili=variabili,
         colonne_errori=colonne_errori,
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
+        units=UNITS,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
@@ -565,6 +644,7 @@ def result(run_id):
         variabili=meta.get("variabili", []),
         colonne_errori=meta.get("colonne_errori", []),
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
+        units=UNITS,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
