@@ -1,4 +1,0 @@
-theta1_in = 5
-theta1_out = 331
-theta2_in = 175
-theta2_out = 105

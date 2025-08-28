@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify
+﻿from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify
 import os
 from werkzeug.utils import secure_filename
 import uuid
@@ -28,6 +28,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Stato di avanzamento delle esecuzioni asincrone
 PROGRESS: dict[str, dict] = {}
+# Stato avanzamento per la funzione "esplora" (per run_id)
+PROGRESS_EXPLORA: dict[str, dict] = {}
 
 # Unita' di misura di base per alcune variabili note
 UNITS: dict[str, str] = {
@@ -43,7 +45,7 @@ UNITS: dict[str, str] = {
     "x1_quiete": "m", "y1_quiete": "m", "x2_quiete": "m", "y2_quiete": "m",
     # No-cicloide
     "V1_post_Kmh": "km/h", "V2_post_Kmh": "km/h",
-    # Velocità in km/h (best summary)
+    # VelocitÃ  in km/h (best summary)
     "V1_pre": "Km/h", "V2_pre": "Km/h", "V1_post": "Km/h", "V2_post": "Km/h",
     "omega1_post": "rad/s", "omega2_post": "rad/s",
     "omega1_pre": "rad/s", "omega2_pre": "rad/s",
@@ -382,6 +384,12 @@ def run():
     except Exception:
         pass
 
+    # Prepara elenco variabili espandibili (range definiti)
+    expandable_vars = [
+        k for k, v in parametri.items()
+        if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]
+    ]
+
     return render_template(
         "results.html",
         best=best,
@@ -392,6 +400,7 @@ def run():
         colonne_errori=colonne_errori,
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
         units=UNITS,
+        expandable_vars=expandable_vars,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
@@ -600,6 +609,14 @@ def api_progress(run_id):
     return jsonify(info)
 
 
+@app.route("/api/esplora_progress/<run_id>")
+def api_esplora_progress(run_id):
+    info = PROGRESS_EXPLORA.get(run_id)
+    if not info:
+        return jsonify({"error": "run non trovato"}), 404
+    return jsonify(info)
+
+
 @app.route("/result/<run_id>")
 def result(run_id):
     # Ricostruisce la pagina risultati da file salvati
@@ -635,6 +652,13 @@ def result(run_id):
         else:
             best[k] = v
 
+    # Prepara elenco variabili espandibili (range definiti)
+    params = meta.get("parametri", {})
+    expandable_vars = [
+        k for k, v in params.items()
+        if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]
+    ]
+
     return render_template(
         "results.html",
         best=best,
@@ -645,6 +669,7 @@ def result(run_id):
         colonne_errori=meta.get("colonne_errori", []),
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
         units=UNITS,
+        expandable_vars=expandable_vars,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
@@ -712,6 +737,7 @@ def api_esplora(run_id):
     max_iter = int(body.get("max_iter", 20))
     passo = float(body.get("passo", 1.0))
     soglia_salto = float(body.get("soglia_salto", 3.0))
+    user_vars = body.get("vars")  # lista di variabili che l'utente vuole espandere
 
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
     meta_path = os.path.join(run_dir, "meta.json")
@@ -726,19 +752,42 @@ def api_esplora(run_id):
         return jsonify({"error": "metrica non specificata"}), 400
 
     # Prepara variabili da espandere: solo quelle con range variabile
-    variabili_da_espandere = [k for k, v in parametri.items() if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]]
+    candidates = [k for k, v in parametri.items() if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]]
+    if isinstance(user_vars, list) and len(user_vars) > 0:
+        variabili_da_espandere = [k for k in user_vars if k in candidates]
+    else:
+        variabili_da_espandere = candidates
     if not variabili_da_espandere:
         return jsonify({"error": "nessun parametro variabile"}), 400
 
     ranges_correnti = {k: tuple(parametri[k]) for k in variabili_da_espandere}
     risultati_iter = []
+    report_lines: list[str] = []
     salto_rilevato = False
     iterazioni_post_salto = 0
     ultimo_output_valido = None
 
     import numpy as np  # lazy import
 
+    # inizializza stato avanzamento
+    PROGRESS_EXPLORA[run_id] = {
+        "current": 0,
+        "total": max_iter,
+        "done": False,
+        "error": None,
+        "last": None,
+        "started": time.time(),
+        "cancel": False,
+    }
+
     for iterazione in range(max_iter):
+        # check cancel richiesta dall'utente
+        try:
+            if PROGRESS_EXPLORA.get(run_id, {}).get("cancel"):
+                PROGRESS_EXPLORA[run_id] = { **PROGRESS_EXPLORA.get(run_id, {}), "done": True, "canceled": True }
+                break
+        except Exception:
+            pass
         parametri_attuali = _aggiorna_parametri(parametri, ranges_correnti)
         N_pre = 10000
         pre_output = _model_montecarlo(parametri_attuali, targets, N=N_pre)
@@ -756,6 +805,13 @@ def api_esplora(run_id):
             N_dinamico = max(N_dinamico, N_pre)
             N_dinamico = min(N_dinamico, 200000)
 
+        # Log intestazione e N dinamico
+        report_lines.append(f"[Iter {iterazione+1}]")
+        try:
+            report_lines.append(f"   N dinamico calcolato: {N_dinamico} (media={media_pre:.3f}, std={sigma_pre:.3f})")
+        except Exception:
+            report_lines.append(f"   N dinamico calcolato: {N_dinamico}")
+
         output = _model_montecarlo(parametri_attuali, targets, N=N_dinamico)
         if output:
             ultimo_output_valido = output
@@ -765,13 +821,33 @@ def api_esplora(run_id):
         std = float(np.std(valori_output_filtrati)) if valori_output_filtrati else float('nan')
         media = float(np.mean(valori_output_filtrati)) if valori_output_filtrati else float('nan')
 
-        risultati_iter.append({
+        # Log deviazione standard/assenza dati
+        if not math.isnan(std):
+            report_lines.append(f"   Deviazione std {metric}: {std:.2f}")
+        else:
+            report_lines.append("   Nessun dato valido")
+
+        step = {
             "iter": iterazione + 1,
             "ranges": ranges_correnti.copy(),
             "deviazione_std": std,
             "media_output": media,
             "campioni_validi": len(valori_output_filtrati)
-        })
+        }
+        risultati_iter.append(step)
+
+        # aggiorna barra avanzamento
+        try:
+            PROGRESS_EXPLORA[run_id] = {
+                **PROGRESS_EXPLORA.get(run_id, {}),
+                "current": iterazione + 1,
+                "total": max_iter,
+                "done": False,
+                "error": None,
+                "last": step,
+            }
+        except Exception:
+            pass
 
         if len(risultati_iter) >= 2 and not salto_rilevato:
             std_prec = risultati_iter[-2]['deviazione_std']
@@ -779,6 +855,9 @@ def api_esplora(run_id):
                 incremento = std / std_prec
                 if incremento > soglia_salto:
                     salto_rilevato = True
+                    report_lines.append("")
+                    report_lines.append(f"âš ï¸   SALTO NETTO RILEVATO: da std = {std_prec:.2f} a std = {std:.2f} (x{incremento:.2f})")
+                    report_lines.append("")
 
         if salto_rilevato:
             iterazioni_post_salto += 1
@@ -787,12 +866,136 @@ def api_esplora(run_id):
 
         ranges_correnti = _espandi_range(ranges_correnti, passo=passo)
 
+    # chiude stato avanzamento
+    try:
+        PROGRESS_EXPLORA[run_id] = {
+            **PROGRESS_EXPLORA.get(run_id, {}),
+            "current": len(risultati_iter),
+            "total": max_iter,
+            "done": True,
+            "error": None,
+        }
+    except Exception:
+        pass
+
+    # --- RIEPILOGO ---
+    report_lines.append("")
+    # --- RIEPILOGO --- (rimosso su richiesta)
+    variabili_positive = {'V1_pre', 'V2_pre', 'V1_post', 'V2_post', 'Ed', 'f1', 'f2', 'cicloide1', 'cicloide2'}
+    for r in []:
+        media = r.get('media_output')
+        std = r.get('deviazione_std')
+        if media is None or std is None or math.isnan(media) or math.isnan(std):
+            report_lines.append(f"Iter {r.get('iter'):>2} | std = {std:.2f} | {metric}: nessun dato valido")
+            continue
+        low = media - 3*std
+        high = media + 3*std
+        if metric in variabili_positive:
+            low = max(0, low)
+        try:
+            report_lines.append(f"Iter {r.get('iter'):>2} | std = {std:.2f} | {metric}: {media:.2f} +/- {3*std:.2f}  [{low:.2f}, {high:.2f}]")
+        except Exception:
+            # fallback without f-string formatting of low/high as placeholders
+            report_lines.append(f"Iter {r.get('iter'):>2} | std = {std:.2f} | {metric}: {media:.2f}")
+
+    report_lines.append("")
+    if salto_rilevato and len(risultati_iter) >= 16:
+        report_lines.append("------ ULTIMA SIMULAZIONE PRIMA DEL SALTO ------")
+        report_lines.append("")
+        ultima_simulazione = risultati_iter[-16]
+    else:
+        report_lines.append("------ ULTIMA SIMULAZIONE (NESSUN SALTO RILEVATO) ------")
+        report_lines.append("")
+        ultima_simulazione = risultati_iter[-1] if risultati_iter else None
+
+    if ultima_simulazione:
+        media = ultima_simulazione.get('media_output')
+        std = ultima_simulazione.get('deviazione_std')
+        low = max(0, media - 3*std) if (media is not None and std is not None) else None
+        high = (media + 3*std) if (media is not None and std is not None) else None
+        report_lines.append("Valore Atteso della variabile testata:")
+        report_lines.append("")
+        if low is not None and low == 0:
+            report_lines.append(f"{metric:<25} = {media:12.2f} + {3*std:.2f}")
+        elif low is not None and high is not None:
+            report_lines.append(f"{metric:<25} = {media:12.2f} +/- {3*std:.2f}  [{low:.2f}, {high:.2f}]")
+        report_lines.append("")
+        report_lines.append("Precisione (+/- 3 sigma)       =        99.73%")
+        report_lines.append("Livello di Confidenza (sigma) =        95.00%")
+        report_lines.append("")
+        report_lines.append("Range valori (valore centrale +/- semiampiezza):")
+        report_lines.append("")
+        for k, (v_min, v_max) in (ultima_simulazione.get('ranges') or {}).items():
+            try:
+                centro = (v_min + v_max) / 2
+                semiamp = (v_max - v_min) / 2
+                report_lines.append(f" - {k:<23}= {centro:10.2f} +/- {semiamp:.2f}")
+            except Exception:
+                continue
+
+    # RIEPILOGO con filtro su deviazione standard
+    SOGLIA_STD = 5.0
+    filtrati = [r for r in risultati_iter if r.get('deviazione_std') is not None and not math.isnan(r.get('deviazione_std')) and r.get('deviazione_std') <= SOGLIA_STD]
+    if filtrati:
+        report_lines.append("")
+        report_lines.append(f"------- ULTIMA SIMULAZIONE con dev_std = {SOGLIA_STD} -------:")
+        report_lines.append("")
+        migliore = min(filtrati, key=lambda r: r['deviazione_std'])
+        media = migliore.get('media_output')
+        std = migliore.get('deviazione_std')
+        low = max(0, media - 3*std) if (media is not None and std is not None) else None
+        high = (media + 3*std) if (media is not None and std is not None) else None
+        if low is not None and low == 0:
+            report_lines.append(f"{metric:<25} = {media:12.2f} + {3*std:.2f}")
+        elif low is not None and high is not None:
+            report_lines.append(f"{metric:<25} = {media:12.2f} +/- {3*std:.2f}  [{low:.2f}, {high:.2f}]")
+        report_lines.append("")
+        report_lines.append("Precisione (+/- 3 sigma)       =        99.73%")
+        report_lines.append("Livello di Confidenza (sigma) =        95.00%")
+        report_lines.append("")
+        report_lines.append("Range valori (valore centrale +/- semiampiezza):")
+        report_lines.append("")
+        for k, (v_min, v_max) in (migliore.get('ranges') or {}).items():
+            try:
+                centro = (v_min + v_max) / 2
+                semiamp = (v_max - v_min) / 2
+                report_lines.append(f" - {k:<23}= {centro:10.2f} +/- {semiamp:.2f}")
+            except Exception:
+                continue
+
+    # RIEPILOGO aggiuntivo ben formattato (come terminale)
+    report_lines.append("")
+    # report_lines.append("--- RIEPILOGO (formattato) ---")
+    variabili_positive = {'V1_pre', 'V2_pre', 'V1_post', 'V2_post', 'Ed', 'f1', 'f2', 'cicloide1', 'cicloide2'}
+    for r in []:
+        media = r.get('media_output')
+        std = r.get('deviazione_std')
+        if media is None or std is None or math.isnan(media) or math.isnan(std):
+            report_lines.append(f"Iter {r.get('iter'):>2} | std = {std if std is not None else float('nan'):.2f} | {metric}: nessun dato valido")
+            continue
+        low = media - 3*std
+        high = media + 3*std
+        if metric in variabili_positive:
+            low = max(0, low)
+        report_lines.append(f"Iter {r.get('iter'):>2} | std = {std:.2f} | {metric}: {media:.2f} +/- {3*std:.2f}  [{low:.2f}, {high:.2f}]")
+
     response = {
         "metric": metric,
         "iterazioni": risultati_iter,
         "salto_rilevato": salto_rilevato,
+        "canceled": PROGRESS_EXPLORA.get(run_id, {}).get("canceled", False),
+        "report": "\n".join(report_lines),
     }
     return jsonify(response)
+
+
+@app.route("/api/esplora_cancel/<run_id>", methods=["POST"])
+def api_esplora_cancel(run_id):
+    if run_id not in PROGRESS_EXPLORA:
+        PROGRESS_EXPLORA[run_id] = {"cancel": True}
+    else:
+        PROGRESS_EXPLORA[run_id] = { **PROGRESS_EXPLORA.get(run_id, {}), "cancel": True }
+    return jsonify({"status": "cancelling"})
 
 
 def _coalesce_val(v: str | None):
