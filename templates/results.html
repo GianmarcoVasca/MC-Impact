@@ -18,7 +18,6 @@
   </head>
   <body>
     <h1>Risultati Monte Carlo</h1>
-    <p class="muted">Mostro le prime 50 righe valide su {{ total }} totali.</p>
 
     <div class="grid">
       <div class="card">
@@ -70,16 +69,58 @@
 
     <div class="card" style="margin-top:1rem;">
       <h2>Diagramma vettoriale <small><a href="{{ url_for('plot_full', kind='vectors', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
+      <div id="ctrl-vectors" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
+        <span>Posizione titolo</span>
+        <label>X <input id="vx" type="range" min="0" max="1" step="0.01" value="0.5" style="width:120px;"></label>
+        <label>Y <input id="vy" type="range" min="0" max="1" step="0.01" value="0.95" style="width:120px;"></label>
+        <span>|</span>
+        <label>Legenda
+          <select id="vleg">
+            <option value="tr">in alto a destra</option>
+            <option value="tl">in alto a sinistra</option>
+            <option value="br">in basso a destra</option>
+            <option value="bl">in basso a sinistra</option>
+          </select>
+        </label>
+      </div>
       <div id="vectors" style="height:560px;"></div>
     </div>
 
     <div class="card" style="margin-top:1rem;">
       <h2>Chiusura triangoli <small><a href="{{ url_for('plot_full', kind='triangoli', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
+      <div id="ctrl-triangoli" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
+        <span>Posizione titolo</span>
+        <label>X <input id="tx" type="range" min="0" max="1" step="0.01" value="0.5" style="width:120px;"></label>
+        <label>Y <input id="ty" type="range" min="0" max="1" step="0.01" value="0.95" style="width:120px;"></label>
+        <span>|</span>
+        <label>Legenda
+          <select id="tleg">
+            <option value="tr">in alto a destra</option>
+            <option value="tl">in alto a sinistra</option>
+            <option value="br">in basso a destra</option>
+            <option value="bl">in basso a sinistra</option>
+          </select>
+        </label>
+      </div>
       <div id="triangoli" style="height:560px;"></div>
     </div>
 
     <div class="card" style="margin-top:1rem;">
       <h2>Cicloidi post-urto <small><a href="{{ url_for('plot_full', kind='cicloidi', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
+      <div id="ctrl-cicloidi" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
+        <span>Posizione titolo</span>
+        <label>X <input id="cx" type="range" min="0" max="1" step="0.01" value="0.5" style="width:120px;"></label>
+        <label>Y <input id="cy" type="range" min="0" max="1" step="0.01" value="0.95" style="width:120px;"></label>
+        <span>|</span>
+        <label>Legenda
+          <select id="cleg">
+            <option value="tr">in alto a destra</option>
+            <option value="tl">in alto a sinistra</option>
+            <option value="br">in basso a destra</option>
+            <option value="bl">in basso a sinistra</option>
+          </select>
+        </label>
+      </div>
       <div id="cicloidi" style="height:560px;"></div>
     </div>
 
@@ -91,30 +132,25 @@
       <div id="pdof" style="height:520px;"></div>
     </div>
 
+    
     <div class="card" style="margin-top:1rem;">
-      <h2>Anteprima risultati validi</h2>
-      {% if rows %}
-        <table>
-          <thead>
-            <tr>
-              {% for col in rows[0].keys() %}
-                <th>{{ col }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr>
-                {% for col, val in row.items() %}
-                  <td>{{ val }}</td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p>Nessuna riga valida da mostrare.</p>
-      {% endif %}
+      <h2>Esplora variabilità (esplora.py)</h2>
+      <div class="row">
+        <label for="selMetric">Metrica da monitorare</label>
+        <select id="selMetric">
+          {% for col in variabili %}<option value="{{ col }}">{{ col }}</option>{% endfor %}
+          {% for col in colonne_errori %}<option value="{{ col }}">{{ col }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="row">
+        <label>Parametri</label>
+        <div class="muted">max_iter: <input id="itMax" type="number" value="20" min="1" style="width:90px;"> 
+          passo: <input id="itPasso" type="number" step="0.1" value="1.0" style="width:90px;">
+          soglia_salto: <input id="itSoglia" type="number" step="0.1" value="3.0" style="width:90px;"></div>
+      </div>
+      <div class="actions"><button id="btnEsplora" type="button">Esegui esplora</button></div>
+      <div id="esploraOut" class="muted" style="margin-top:.5rem;"></div>
+      <div id="esploraPlot" style="height:320px; margin-top:.5rem;"></div>
     </div>
 
     <script>
@@ -146,7 +182,8 @@
 
       function deg2rad(d){ return d * Math.PI / 180; }
       function vec(x,y, len, angDeg) { const a = deg2rad(angDeg); return {x: x + len*Math.cos(a), y: y + len*Math.sin(a)}; }
-      function arrow(x0,y0, x1,y1, color) { return { type: 'scatter', x:[x0,x1], y:[y0,y1], mode:'lines', line:{color, width:2} }; }
+      function arrow(x0,y0, x1,y1, color, name) { return { type: 'scatter', x:[x0,x1], y:[y0,y1], mode:'lines', line:{color, width:2}, name }; }
+      function legendCorner(c){ const map={tr:[1,1,'right','top'], tl:[0,1,'left','top'], br:[1,0,'right','bottom'], bl:[0,0,'left','bottom']}; return map[c]||map.tr; }
 
       function drawVectors() {
         const g = graphInputs.vectors;
@@ -158,10 +195,10 @@
         const v2post= vec(g.x2, g.y2, scale*g.V2_post, g.theta2_out);
 
         const traces = [
-          arrow(g.x1, g.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
-          arrow(g.x1, g.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
-          arrow(g.x2, g.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
-          arrow(g.x2, g.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+          arrow(g.x1, g.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
+          arrow(g.x1, g.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
+          arrow(g.x2, g.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
+          arrow(g.x2, g.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
         ];
 
         const shapes = [];
@@ -169,6 +206,14 @@
           {x:g.x1, y:g.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
           {x:g.x2, y:g.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
         ];
+        // Arrowheads for vectors
+        const arrs = [
+          {x0:g.x1, y0:g.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
+          {x0:g.x1, y0:g.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
+          {x0:g.x2, y0:g.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
+          {x0:g.x2, y0:g.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+        ];
+        for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
 
         if (g.PDOF_stima != null) {
           const r = 5;
@@ -177,8 +222,10 @@
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+'°', showarrow:false, font:{color:'magenta'}});
         }
 
-        const layout = { title: 'Rappresentazione vettoriale', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations };
+        const layout = { title: {text:'Rappresentazione vettoriale', x:0.5, y:0.95}, xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations };
         Plotly.newPlot('vectors', traces, layout, {responsive:true});
+        const vx=document.getElementById('vx'), vy=document.getElementById('vy'), vleg=document.getElementById('vleg');
+        if (vx && vy && vleg){ function apply(){ const [lx,ly,lxa,lya]=legendCorner(vleg.value); Plotly.relayout('vectors', {'title.x':parseFloat(vx.value),'title.y':parseFloat(vy.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } vx.oninput=apply; vy.oninput=apply; vleg.onchange=apply; }
       }
 
       function drawTriangoli() {
@@ -190,23 +237,32 @@
         const v2pre = vec(t.x2, t.y2, scale*t.V2_pre, t.theta2_in_t);
         const v2post= vec(t.x2, t.y2, scale*t.V2_post_t, t.theta2_out_t);
         const traces = [
-          arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
-          arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
-          arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
-          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+          arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
+          arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
+          arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
+          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
         ];
         const shapes = [];
         const annotations = [
           {x:t.x1, y:t.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
           {x:t.x2, y:t.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
         ];
+        const arrs = [
+          {x0:t.x1, y0:t.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
+          {x0:t.x1, y0:t.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
+          {x0:t.x2, y0:t.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
+          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+        ];
+        for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
         if (t.PDOF_eff != null) {
           const r = 5; const a = deg2rad(t.PDOF_eff);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'black', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: t.PDOF_eff.toFixed(1)+'°', showarrow:false});
         }
-        const layout = { title: 'Chiusura triangoli', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations };
+        const layout = { title:{text:'Chiusura triangoli', x:0.5, y:0.95}, xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations };
         Plotly.newPlot('triangoli', traces, layout, {responsive:true});
+        const tx=document.getElementById('tx'), ty=document.getElementById('ty'), tleg=document.getElementById('tleg');
+        if (tx && ty && tleg){ function applyT(){ const [lx,ly,lxa,lya]=legendCorner(tleg.value); Plotly.relayout('triangoli', {'title.x':parseFloat(tx.value),'title.y':parseFloat(ty.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } tx.oninput=applyT; ty.oninput=applyT; tleg.onchange=applyT; }
       }
 
       drawVectors();
@@ -228,8 +284,10 @@
           const L=3, a=deg2rad(c.ang2);
           shapes.push({type:'line', x0:c.A2[0]-L*Math.cos(a), y0:c.A2[1]-L*Math.sin(a), x1:c.A2[0]+L*Math.cos(a), y1:c.A2[1]+L*Math.sin(a), line:{color:'magenta', dash:'dash'}});
         }
-        const layout = { title:'Cicloidi post-urto', xaxis:{scaleanchor:'y'}, yaxis:{}, shapes };
+        const layout = { title:{text:'Cicloidi post-urto', x:0.5, y:0.95}, xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'} };
         Plotly.newPlot('cicloidi', traces, layout, {responsive:true});
+        const cx=document.getElementById('cx'), cy=document.getElementById('cy'), cleg=document.getElementById('cleg');
+        if (cx && cy && cleg){ function applyC(){ const [lx,ly,lxa,lya]=legendCorner(cleg.value); Plotly.relayout('cicloidi', {'title.x':parseFloat(cx.value),'title.y':parseFloat(cy.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } cx.oninput=applyC; cy.oninput=applyC; cleg.onchange=applyC; }
       }
       drawCicloidi();
 
@@ -265,12 +323,33 @@
           if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); }
           traces.push({type:'scatterpolar', mode:'markers+text', r:[r1], theta:[toDeg(thG1)], marker:{color:'blue', size:8}, text:['G1'], textposition:'top center', showlegend:false});
           traces.push({type:'scatterpolar', mode:'markers+text', r:[r2], theta:[toDeg(thG2)], marker:{color:'red', size:8}, text:['G2'], textposition:'top center', showlegend:false});
-          const layout = {polar:{ radialaxis:{visible:true, range:[0,Rmax]} }, margin:{t:40,l:10,r:10,b:10}, showlegend:false };
-          Plotly.newPlot(containerId, traces, layout, {responsive:true});
+          const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Cono di validità PDOF', showarrow:false, font:{size:16}};
+          const layout = { polar:{ radialaxis:{visible:true, range:[0,Rmax]} }, margin:{t:60,l:10,r:10,b:10}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, annotations:[titleAnn] };
+          Plotly.newPlot(containerId, traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
         }
         draw('pdof', false);
       }
       drawPDOF();
+
+      // Titolo e legenda ora sono trascinabili: nessun controllo extra necessario.
+
+      // Esplora handler
+      document.getElementById('btnEsplora').addEventListener('click', async ()=>{
+        const m = document.getElementById('selMetric').value;
+        const it = parseInt(document.getElementById('itMax').value||'20');
+        const ps = parseFloat(document.getElementById('itPasso').value||'1');
+        const sg = parseFloat(document.getElementById('itSoglia').value||'3');
+        const out = document.getElementById('esploraOut');
+        out.textContent = 'Elaborazione in corso...';
+        const res = await fetch(`/api/esplora/${runId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({metrica:m, max_iter:it, passo:ps, soglia_salto:sg})});
+        const data = await res.json();
+        if (!res.ok){ out.textContent = data.error || 'Errore'; return; }
+        const iters = data.iterazioni || [];
+        if (iters.length===0){ out.textContent='Nessun dato'; return; }
+        out.textContent = `Iterazioni: ${iters.length} • Salto rilevato: ${data.salto_rilevato?'sì':'no'}`;
+        const xs = iters.map(r=>r.iter), ys = iters.map(r=>r.deviazione_std);
+        Plotly.newPlot('esploraPlot', [{x:xs, y:ys, type:'scatter', mode:'lines+markers', name:'std'}], {margin:{t:30}, title:`Deviazione std di ${m}`}, {responsive:true});
+      });
     </script>
   </body>
   </html>

@@ -5,6 +5,9 @@ import uuid
 import pickle
 import json
 import math
+import time
+import threading
+from io import StringIO
 
 # Reuse existing project logic
 import pandas as pd
@@ -23,8 +26,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "web_uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Stato di avanzamento delle esecuzioni asincrone
+PROGRESS: dict[str, dict] = {}
 
-def run_simulation(dati_path: str, targets_path: str, override_N: int | None = None):
+
+def run_simulation(dati_path: str, targets_path: str, override_N: int | None = None, progress_key: str | None = None):
     """Run the same Monte Carlo flow as main.py but without plots or prompts.
 
     Returns (df_validi, riga_minima) where df_validi is a pandas DataFrame
@@ -43,6 +49,7 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
 
     risultati_validi = []
 
+    start_ts = time.time()
     for i in range(N):
         p = genera_input_casuale(parametri)
         t = genera_input_casuale(targets)
@@ -54,6 +61,21 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
         except Exception:
             # ignore failing combinations just like main.py
             continue
+
+        # Aggiorna stato di avanzamento
+        if progress_key:
+            now = time.time()
+            done = i + 1
+            elapsed = max(0.0, now - start_ts)
+            rate = done / elapsed if elapsed > 0 else 0
+            remaining = (N - done) / rate if rate > 0 else None
+            PROGRESS[progress_key] = {
+                "current": done,
+                "total": N,
+                "elapsed": elapsed,
+                "eta_seconds": remaining,
+                "started": start_ts,
+            }
 
     if not risultati_validi:
         raise RuntimeError("Nessuna combinazione soddisfa i criteri nei limiti impostati.")
@@ -121,20 +143,19 @@ def run():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and override_N.isdigit()) else None
 
-    # Decide which files to use
-    use_defaults = request.form.get("use_defaults") == "on"
-
-    if use_defaults:
-        dati_path = os.path.join(BASE_DIR, "dati.txt")
-        targets_path = os.path.join(BASE_DIR, "targets.txt")
-        if not (os.path.exists(dati_path) and os.path.exists(targets_path)):
-            flash("File dati.txt/targets.txt non trovati nella cartella del progetto.", "error")
+    input_mode = request.form.get("input_mode", "upload")
+    if input_mode == "manual":
+        try:
+            dati_path, targets_path = _build_manual_files_from_form(request.form)
+        except ValueError as e:
+            flash(str(e), "error")
             return redirect(url_for("index"))
     else:
+        # Richiede esplicitamente upload dei file
         dati_file = request.files.get("dati_file")
         targets_file = request.files.get("targets_file")
-        if not dati_file or not targets_file or dati_file.filename == "" or targets_file.filename == "":
-            flash("Carica sia dati.txt che targets.txt o seleziona l'opzione predefinita.", "error")
+        if not dati_file or not targets_file or not dati_file.filename or not targets_file.filename:
+            flash("Carica sia dati.txt che targets.txt.", "error")
             return redirect(url_for("index"))
         # Save uploads
         dati_name = secure_filename(dati_file.filename) or "dati.txt"
@@ -286,7 +307,7 @@ def run():
     return render_template(
         "results.html",
         best=best,
-        rows=preview,
+        rows=[],
         total=len(df_validi),
         run_id=run_id,
         variabili=variabili,
@@ -344,6 +365,498 @@ def api_scatter(run_id):
         "y": to_jsonable(df2[y].tolist()),
         "c": to_jsonable(df2[c].tolist())
     })
+
+
+# --- Nuovo flusso asincrono con barra di avanzamento ---
+def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: int | None):
+    key = run_id
+    try:
+        df_validi, riga_minima, parametri, targets = run_simulation(dati_path, targets_path, override_N, progress_key=key)
+        # Compute helper lists
+        colonne_errori = [c for c in df_validi.columns if c.lower().startswith("errore_") or c.lower().startswith("err_")]
+        variabili = [c for c in df_validi.columns if not (c.lower().startswith("errore_") or c.lower().startswith("err_"))]
+
+        run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
+            pickle.dump(df_validi, f)
+        with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
+            pickle.dump(riga_minima, f)
+        with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "variabili": variabili,
+                "colonne_errori": colonne_errori,
+                "parametri": to_jsonable(parametri),
+                "targets": to_jsonable(targets),
+            }, f)
+
+        # Prepara graph_inputs come in /run
+        def get_val(name, default=None):
+            return riga_minima[name] if name in riga_minima else default
+        graph_inputs = {
+            "vectors": {
+                "V1_pre": get_val('V1_pre'),
+                "theta1_in": get_val('theta1_in'),
+                "V1_post": get_val('V1_post'),
+                "theta1_out": get_val('theta1_out'),
+                "V2_pre": get_val('V2_pre'),
+                "theta2_in": get_val('theta2_in'),
+                "V2_post": get_val('V2_post'),
+                "theta2_out": get_val('theta2_out'),
+                "x1": get_val('x1'),
+                "y1": get_val('y1'),
+                "x2": get_val('x2'),
+                "y2": get_val('y2'),
+                "PDOF_stima": get_val('PDOF_stima'),
+                "J1": get_val('J1'),
+                "J2": get_val('J2'),
+                "omega1_pre": get_val('omega1_pre'),
+                "omega1_post": get_val('omega1_post'),
+                "omega2_pre": get_val('omega2_pre'),
+                "omega2_post": get_val('omega2_post')
+            },
+            "triangoli": {
+                "V1_pre": get_val('V1_pre'),
+                "theta1_in_t": get_val('theta1_in_t'),
+                "V1_post_t": get_val('V1_post_t'),
+                "theta1_out_t": get_val('theta1_out_t'),
+                "V2_pre": get_val('V2_pre'),
+                "theta2_in_t": get_val('theta2_in_t'),
+                "V2_post_t": get_val('V2_post_t'),
+                "theta2_out_t": get_val('theta2_out_t'),
+                "x1": get_val('x1'),
+                "y1": get_val('y1'),
+                "x2": get_val('x2'),
+                "y2": get_val('y2'),
+                "PDOF_eff": get_val('PDOF_eff')
+            },
+            "cicloidi": {},
+            "pdof": {}
+        }
+        if 'punti_cicloide_x1' in riga_minima and 'punti_cicloide_y1' in riga_minima:
+            try:
+                graph_inputs["cicloidi"] = {
+                    "x1": to_jsonable(get_val('punti_cicloide_x1')),
+                    "y1": to_jsonable(get_val('punti_cicloide_y1')),
+                    "A1": to_jsonable(get_val('cic_A1')),
+                    "B1": to_jsonable(get_val('cic_B1')),
+                    "theta1": get_val('cicloide_th1'),
+                    "R1": get_val('cicloide_R1'),
+                    "L1": get_val('cicloide1'),
+                    "ang1": get_val('theta1_out'),
+                    "x2": to_jsonable(get_val('punti_cicloide_x2')),
+                    "y2": to_jsonable(get_val('punti_cicloide_y2')),
+                    "A2": to_jsonable(get_val('cic_A2')),
+                    "B2": to_jsonable(get_val('cic_B2')),
+                    "theta2": get_val('cicloide_th2'),
+                    "R2": get_val('cicloide_R2'),
+                    "L2": get_val('cicloide2'),
+                    "ang2": get_val('theta2_out')
+                }
+            except Exception:
+                pass
+        try:
+            pdof_target = None
+            if 'PDOF' in targets:
+                tval = targets['PDOF']
+                if isinstance(tval, (tuple, list)):
+                    pdof_target = float(tval[0])
+            graph_inputs["pdof"] = {
+                "target": pdof_target,
+                "stima": get_val('PDOF_stima'),
+                "eff": get_val('PDOF_eff')
+            }
+        except Exception:
+            pass
+        try:
+            run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+            with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as gf:
+                json.dump(to_jsonable(graph_inputs), gf)
+        except Exception:
+            pass
+
+        PROGRESS[key] = { **PROGRESS.get(key, {}), "done": True }
+    except Exception as e:
+        PROGRESS[key] = { **PROGRESS.get(key, {}), "error": str(e), "done": True }
+
+
+@app.route("/start", methods=["POST"]) 
+def start_async():
+    override_N = request.form.get("N")
+    override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
+
+    input_mode = request.form.get("input_mode", "upload")
+    if input_mode == "manual":
+        try:
+            dati_path, targets_path = _build_manual_files_from_form(request.form)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    else:
+        # Richiede upload dei file
+        dati_file = request.files.get("dati_file")
+        targets_file = request.files.get("targets_file")
+        if not dati_file or not targets_file or not dati_file.filename or not targets_file.filename:
+            return jsonify({"error": "Carica sia dati.txt che targets.txt."}), 400
+        dati_name = secure_filename(dati_file.filename) or "dati.txt"
+        targets_name = secure_filename(targets_file.filename) or "targets.txt"
+        dati_path = os.path.join(UPLOAD_DIR, f"upload_{uuid.uuid4()}_{dati_name}")
+        targets_path = os.path.join(UPLOAD_DIR, f"upload_{uuid.uuid4()}_{targets_name}")
+        dati_file.save(dati_path)
+        targets_file.save(targets_path)
+
+    run_id = str(uuid.uuid4())
+    PROGRESS[run_id] = {"current": 0, "total": 0, "started": time.time(), "eta_seconds": None, "done": False}
+
+    th = threading.Thread(target=_background_run, args=(run_id, dati_path, targets_path, override_N), daemon=True)
+    th.start()
+
+    return jsonify({"run_id": run_id, "status": "started"})
+
+
+@app.route("/api/progress/<run_id>")
+def api_progress(run_id):
+    info = PROGRESS.get(run_id)
+    if not info:
+        return jsonify({"error": "run non trovato"}), 404
+    return jsonify(info)
+
+
+@app.route("/result/<run_id>")
+def result(run_id):
+    # Ricostruisce la pagina risultati da file salvati
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    pkl_df = os.path.join(run_dir, "df.pkl")
+    pkl_best = os.path.join(run_dir, "best.pkl")
+    meta_path = os.path.join(run_dir, "meta.json")
+    gi_path = os.path.join(run_dir, "graph_inputs.json")
+    if not (os.path.exists(pkl_df) and os.path.exists(pkl_best) and os.path.exists(meta_path) and os.path.exists(gi_path)):
+        return jsonify({"error": "risultati non pronti"}), 404
+    with open(pkl_best, "rb") as f:
+        riga_minima = pickle.load(f)
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    with open(gi_path, "r", encoding="utf-8") as f:
+        graph_inputs = json.load(f)
+
+    ignora_prefix = ("punti_cicloide_",)
+    ignora_nomi = {
+        "cicloide_th", "cicloide_R",
+        "cic_A1", "cic_B1", "cic_A2", "cic_B2",
+        "cicloide_th1", "cicloide_th2", "cicloide_R1", "cicloide_R2"
+    }
+    best = {}
+    for k, v in riga_minima.items():
+        ks = str(k)
+        if ks.startswith("err_") or ks.startswith("errore_"):
+            continue
+        if any(ks.startswith(p) for p in ignora_prefix) or ks in ignora_nomi:
+            continue
+        if isinstance(v, (int, float)):
+            best[k] = round(v, 2)
+        else:
+            best[k] = v
+
+    return render_template(
+        "results.html",
+        best=best,
+        rows=[],
+        total=0,
+        run_id=run_id,
+        variabili=meta.get("variabili", []),
+        colonne_errori=meta.get("colonne_errori", []),
+        graph_inputs=json.dumps(to_jsonable(graph_inputs)),
+        files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
+                         "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
+    )
+
+
+# --- Esposizione semplificata di esplora.py lato web ---
+def _filtra_valori_positivi(nome_variabile, valori):
+    variabili_da_filtrare = [
+        "V1_pre", "V2_pre", "V1_post", "V2_post",
+        "Ed", "f1", "f2", "cicloide1", "cicloide2"
+    ]
+    if nome_variabile in variabili_da_filtrare:
+        return [v for v in valori if v is not None and not (isinstance(v, float) and math.isnan(v)) and v >= 0]
+    return [v for v in valori if v is not None and not (isinstance(v, float) and math.isnan(v))]
+
+
+def _espandi_range(ranges: dict, passo: float = 1.0):
+    nuovi_ranges = {}
+    for k, (v_min, v_max) in ranges.items():
+        if k in ['f1', 'f2']:
+            nuovo_min = max(0.3, v_min - 0.01)
+            nuovo_max = min(1.0, v_max + 0.01)
+        elif k in ['d_post1', 'd_post2']:
+            nuovo_min = max(0.1, v_min - 0.1)
+            nuovo_max = v_max + 0.1
+        elif k in ['V1_post_Kmh', 'V2_post_Kmh', 'EES1_Kmh', 'EES2_Kmh']:
+            nuovo_min = max(0.0, v_min - 1.0)
+            nuovo_max = v_max + 1.0
+        elif k in ['m1', 'm2']:
+            nuovo_min = max(0.0, v_min - 10.0)
+            nuovo_max = v_max + 10.0
+        else:
+            nuovo_min = v_min - passo / 2
+            nuovo_max = v_max + passo / 2
+        nuovi_ranges[k] = (nuovo_min, nuovo_max)
+    return nuovi_ranges
+
+
+def _aggiorna_parametri(parametri_base: dict, nuovi_ranges: dict):
+    parametri_mod = dict(parametri_base)
+    for k, v in nuovi_ranges.items():
+        parametri_mod[k] = v
+    return parametri_mod
+
+
+def _model_montecarlo(parametri_modificati: dict, targets: dict, N: int = 1000):
+    risultati = []
+    for _ in range(N):
+        p = genera_input_casuale(parametri_modificati)
+        t = genera_input_casuale(targets)
+        try:
+            res, err = calcoli(p, t)
+            if all(val < 1 for key, val in err.items() if 'errore_' in key.lower()):
+                risultati.append({**res, **err})
+        except Exception:
+            continue
+    return risultati
+
+
+@app.route("/api/esplora/<run_id>", methods=["POST"])
+def api_esplora(run_id):
+    # Parametri di input
+    body = request.get_json(silent=True) or {}
+    metric = body.get("metrica")
+    max_iter = int(body.get("max_iter", 20))
+    passo = float(body.get("passo", 1.0))
+    soglia_salto = float(body.get("soglia_salto", 3.0))
+
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    meta_path = os.path.join(run_dir, "meta.json")
+    if not os.path.exists(meta_path):
+        return jsonify({"error": "run non trovato"}), 404
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    parametri = meta.get("parametri", {})
+    targets = meta.get("targets", {})
+
+    if not metric:
+        return jsonify({"error": "metrica non specificata"}), 400
+
+    # Prepara variabili da espandere: solo quelle con range variabile
+    variabili_da_espandere = [k for k, v in parametri.items() if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]]
+    if not variabili_da_espandere:
+        return jsonify({"error": "nessun parametro variabile"}), 400
+
+    ranges_correnti = {k: tuple(parametri[k]) for k in variabili_da_espandere}
+    risultati_iter = []
+    salto_rilevato = False
+    iterazioni_post_salto = 0
+    ultimo_output_valido = None
+
+    import numpy as np  # lazy import
+
+    for iterazione in range(max_iter):
+        parametri_attuali = _aggiorna_parametri(parametri, ranges_correnti)
+        N_pre = 10000
+        pre_output = _model_montecarlo(parametri_attuali, targets, N=N_pre)
+        valori_pre = [r.get(metric) for r in pre_output if metric in r]
+        valori_pre = _filtra_valori_positivi(metric, [v for v in valori_pre if v is not None and not (isinstance(v, float) and math.isnan(v))])
+        sigma_pre = float(np.std(valori_pre)) if valori_pre else float('nan')
+        media_pre = float(np.mean(valori_pre)) if valori_pre else float('nan')
+
+        z = 1.96
+        errore_abs = 0.025
+        if not valori_pre or math.isnan(sigma_pre) or math.isnan(media_pre) or sigma_pre == 0:
+            N_dinamico = N_pre
+        else:
+            N_dinamico = int((z * sigma_pre / errore_abs) ** 2)
+            N_dinamico = max(N_dinamico, N_pre)
+            N_dinamico = min(N_dinamico, 200000)
+
+        output = _model_montecarlo(parametri_attuali, targets, N=N_dinamico)
+        if output:
+            ultimo_output_valido = output
+
+        valori_output = [r.get(metric) for r in output if metric in r]
+        valori_output_filtrati = _filtra_valori_positivi(metric, [v for v in valori_output if v is not None and not (isinstance(v, float) and math.isnan(v))])
+        std = float(np.std(valori_output_filtrati)) if valori_output_filtrati else float('nan')
+        media = float(np.mean(valori_output_filtrati)) if valori_output_filtrati else float('nan')
+
+        risultati_iter.append({
+            "iter": iterazione + 1,
+            "ranges": ranges_correnti.copy(),
+            "deviazione_std": std,
+            "media_output": media,
+            "campioni_validi": len(valori_output_filtrati)
+        })
+
+        if len(risultati_iter) >= 2 and not salto_rilevato:
+            std_prec = risultati_iter[-2]['deviazione_std']
+            if not math.isnan(std) and not math.isnan(std_prec) and std_prec >= 1e-6:
+                incremento = std / std_prec
+                if incremento > soglia_salto:
+                    salto_rilevato = True
+
+        if salto_rilevato:
+            iterazioni_post_salto += 1
+            if iterazioni_post_salto >= 15:
+                break
+
+        ranges_correnti = _espandi_range(ranges_correnti, passo=passo)
+
+    response = {
+        "metric": metric,
+        "iterazioni": risultati_iter,
+        "salto_rilevato": salto_rilevato,
+    }
+    return jsonify(response)
+
+
+def _coalesce_val(v: str | None):
+    return v if v is not None and str(v).strip() != "" else None
+
+
+def _build_manual_files_from_form(form) -> tuple[str, str]:
+    """Create temporary dati.txt and targets.txt from manual form inputs.
+
+    Returns (dati_path, targets_path).
+    Raises ValueError on invalid/missing required inputs.
+    """
+    # Manual DATI
+    dati_lines: list[str] = []
+    written_names: set[str] = set()
+
+    # N (single only)
+    man_N = _coalesce_val(form.get("man_N"))
+    if man_N:
+        dati_lines.append(f"N = {man_N}")
+        written_names.add("N")
+
+    # gdl select (2 or 3)
+    man_gdl = _coalesce_val(form.get("man_gdl"))
+    if man_gdl in {"2", "3"}:
+        dati_lines.append(f"gdl = {man_gdl}")
+        written_names.add("gdl")
+
+    # Booleans as dropdowns
+    bool_keys = [
+        "cicloide", "cicloide_avanzata", "cicloide_nota",
+        "energia_EES", "stima_PDOF", "chiusura_triangoli",
+    ]
+    for k in bool_keys:
+        val = form.get(f"man_{k}")
+        if val in {"0", "1"}:  # map attivo/non attivo to 1/0 in UI
+            dati_lines.append(f"{k} = {val}")
+            written_names.add(k)
+
+    # Generic manual rows for dati
+    names = form.getlist("man_dati_name[]")
+    modes = form.getlist("man_dati_mode[]")  # 'single' | 'range'
+    v1s = form.getlist("man_dati_v1[]")
+    v2s = form.getlist("man_dati_v2[]")
+    provided_names = set()
+    for i in range(len(names)):
+        name = (names[i] or "").strip()
+        if not name:
+            continue
+        provided_names.add(name)
+        # avoid duplicating reserved keys handled above
+        if name in {"N", "gdl", *bool_keys}:
+            continue
+        v1 = (v1s[i] if i < len(v1s) else "").strip()
+        v2 = (v2s[i] if i < len(v2s) else "").strip()
+        mode = (modes[i] if i < len(modes) else "single").strip()
+        if not v1:
+            continue
+        if mode == "range" and v2:
+            dati_lines.append(f"{name} = {v1}, {v2}")
+            written_names.add(name)
+        else:
+            dati_lines.append(f"{name} = {v1}")
+            written_names.add(name)
+
+    # Manual TARGETS
+    target_lines: list[str] = []
+    t_names = form.getlist("man_target_name[]")
+    t_modes = form.getlist("man_target_mode[]")
+    t_v1s = form.getlist("man_target_v1[]")
+    t_v2s = form.getlist("man_target_v2[]")
+    for i in range(len(t_names)):
+        name = (t_names[i] or "").strip()
+        if not name:
+            continue
+        v1 = (t_v1s[i] if i < len(t_v1s) else "").strip()
+        v2 = (t_v2s[i] if i < len(t_v2s) else "").strip()
+        mode = (t_modes[i] if i < len(t_modes) else "single").strip()
+        if not v1:
+            continue
+        if mode == "range" and v2:
+            target_lines.append(f"{name} = {v1}, {v2}")
+        else:
+            target_lines.append(f"{name} = {v1}")
+
+    # Auto-compile default coordinates when not requested by UI
+    try:
+        man_gdl = _coalesce_val(form.get("man_gdl"))
+        ctri = form.get("man_chiusura_triangoli") == "1"
+        cav = form.get("man_cicloide_avanzata") == "1"
+        sp = form.get("man_stima_PDOF") == "1"
+        if man_gdl == "2" and not ctri and not cav and not sp:
+            # Sezione coordinate nascosta: assegna default richiesti
+            if "x1" not in written_names:
+                dati_lines.append("x1 = 2")
+                written_names.add("x1")
+            if "y1" not in written_names:
+                dati_lines.append("y1 = 2")
+                written_names.add("y1")
+            if "x2" not in written_names:
+                dati_lines.append("x2 = -2")
+                written_names.add("x2")
+            if "y2" not in written_names:
+                dati_lines.append("y2 = -2")
+                written_names.add("y2")
+    except Exception:
+        pass
+
+    # Per tutte le altre variabili non compilate assegna 0
+    # (copriamo i parametri usati direttamente nei modelli/calcoli)
+    required_defaults = [
+        'x1','y1','x2','y2',
+        'x1_quiete','y1_quiete','x2_quiete','y2_quiete',
+        'm1','l1','p1','d_post1','f1','theta_post1','EES1_Kmh','lunghezza_cicloide_1',
+        'm2','l2','p2','d_post2','f2','theta_post2','EES2_Kmh','lunghezza_cicloide_2',
+        'theta1_in','theta1_out','theta2_in','theta2_out',
+        'Ed_target','omega1_post','omega2_post','J1','J2'
+    ]
+    # Booleans: se non specificati, default 0
+    for k in bool_keys:
+        if k not in written_names:
+            dati_lines.append(f"{k} = 0")
+            written_names.add(k)
+    for k in required_defaults:
+        if k not in written_names:
+            dati_lines.append(f"{k} = 0")
+            written_names.add(k)
+
+    # Require at least some content in both files
+    if not dati_lines:
+        raise ValueError("Inserisci almeno un parametro in dati (es. N).")
+    if not target_lines:
+        raise ValueError("Inserisci almeno un parametro in targets.")
+
+    # Write to unique files
+    run_id = uuid.uuid4().hex
+    dati_path = os.path.join(UPLOAD_DIR, f"manual_dati_{run_id}.txt")
+    targets_path = os.path.join(UPLOAD_DIR, f"manual_targets_{run_id}.txt")
+    with open(dati_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(dati_lines) + "\n")
+    with open(targets_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(target_lines) + "\n")
+
+    return dati_path, targets_path
 
 
 if __name__ == "__main__":

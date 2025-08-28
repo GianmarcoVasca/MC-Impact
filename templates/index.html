@@ -3,18 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MC-Impact • Interfaccia</title>
+    <title>MC-Impact — Interfaccia</title>
     <style>
       body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 720px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; }
       .row { margin-bottom: 0.75rem; }
+      .section { margin-top: 1.25rem; padding-top: .25rem; }
       label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
       input[type="file"], input[type="number"] { width: 100%; }
+      /* N fields narrower */
+      #man_N, #N, input[name="N"] { width: 160px !important; }
+      /* In upload mode, allow longer placeholder for N */
+      #section-upload #N { width: 360px !important; }
       .hint { color: #555; font-size: 0.9rem; }
       .actions { margin-top: 1rem; }
       button { padding: 0.6rem 1rem; border: 0; border-radius: 6px; background: #2c7be5; color: #fff; cursor: pointer; }
       .flash { padding: .75rem; margin-bottom: 1rem; border-radius: 6px; }
       .flash.error { background: #fee; color: #900; border: 1px solid #f99; }
+      .progress { margin-top: 1rem; background: #f1f3f5; border-radius: 8px; height: 18px; overflow: hidden; display:none; }
+      .progress .bar { height: 100%; background: linear-gradient(90deg,#51cf66,#2f9e44); width: 0%; transition: width .2s ease; }
+      .eta { margin-top: .5rem; color: #333; display:none; }
+      /* Manual model grid */
+      .model-row { display:grid; grid-template-columns: 340px 200px 110px 300px 180px 60px; gap: 1.25rem; align-items:center; }
+      .model-row code{ font-size:0.95rem; word-break:break-all; }
+      .target-col{ margin-left:1rem; }
+      .target-col input{ width:160px; }
+      .vals { display:grid; grid-template-columns: 150px 150px; gap:.75rem; }
+      .vals input { width: 150px; }
     </style>
   </head>
   <body>
@@ -29,35 +44,346 @@
     {% endwith %}
 
     <div class="card">
-      <form action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
+      <form id="mcForm" action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
         <div class="row">
-          <label>
-            <input type="checkbox" name="use_defaults" {% if defaults.has_default_dati and defaults.has_default_targets %}checked{% endif %}>
-            Usa i file predefiniti del progetto (dati.txt, targets.txt)
-          </label>
-          <div class="hint">Percorso: cartella del progetto</div>
+          <strong>Sorgente input</strong>
+          <label><input type="radio" name="input_mode" value="upload" checked> Carica file .txt</label>
+          <label><input type="radio" name="input_mode" value="manual"> Inserimento manuale</label>
         </div>
 
-        <div class="row">
-          <label for="dati">Oppure carica un dati.txt</label>
-          <input type="file" id="dati" name="dati_file" accept=".txt" />
-        </div>
-        <div class="row">
-          <label for="targets">Oppure carica un targets.txt</label>
-          <input type="file" id="targets" name="targets_file" accept=".txt" />
+        <div id="section-upload">
+          <div class="row">
+            <label for="dati">Carica dati.txt</label>
+            <input type="file" id="dati" name="dati_file" accept=".txt" />
+          </div>
+          <div class="row">
+            <label for="targets">Carica targets.txt</label>
+            <input type="file" id="targets" name="targets_file" accept=".txt" />
+          </div>
+          <div class="row">
+            <label for="N">Override N (simulazioni)</label>
+            <input type="number" id="N" name="N" min="1" step="1" placeholder="Lascia vuoto per usare N da dati.txt" />
+          </div>
         </div>
 
-        <div class="row">
-          <label for="N">(Opzionale) Override di N iterazioni</label>
-          <input type="number" id="N" name="N" min="1" step="1" placeholder="Lascia vuoto per usare N da dati.txt" />
+        <div id="section-manual" style="display:none;">
+          <div class="row"><strong>Parametri dati.txt</strong></div>
+          <div class="row">
+            <label for="man_N">N (iterazioni)</label>
+            <input type="number" id="man_N" name="man_N" min="1" step="1" placeholder="Es. 100000" />
+          </div>
+          <div class="row">
+            <label for="man_gdl">gdl</label>
+            <select id="man_gdl" name="man_gdl">
+              <option value="">—</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </div>
+          <div class="row">
+            <label>Flag iniziali</label>
+            <div class="hint">Scegli "attivo" o "non attivo"</div>
+            <div>
+              <label>cicloide
+                <select name="man_cicloide"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+              <label>cicloide_avanzata
+                <select name="man_cicloide_avanzata"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+              <label>cicloide_nota
+                <select name="man_cicloide_nota"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+              <label>energia_EES
+                <select name="man_energia_EES"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+              <label>stima_PDOF
+                <select name="man_stima_PDOF"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+              <label>chiusura_triangoli
+                <select name="man_chiusura_triangoli"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+              </label>
+            </div>
+          </div>
+
+          <div class="row section"><strong>Parametri modello:</strong></div>
+          <div id="datiRows">
+            <div class="row section"><em>- VEICOLO 1 -</em></div>
+            <div id="sec_vehicle1"></div>
+            <div class="row section"><em>- VEICOLO 2 -</em></div>
+            <div id="sec_vehicle2"></div>
+
+            <div class="row section"><em>- POST-URTI -</em></div>
+            <div id="sec_post_cicloide" style="display:none;"></div>
+            <div id="sec_post_nocicloide" style="display:none;"></div>
+            <div id="sec_post_cicloide_av" style="display:none;"></div>
+            <div id="sec_post_cicloide_nota" style="display:none;"></div>
+
+            <div class="row section"><em>- ENERGIA DI DEFORMAZIONE -</em></div>
+            <div id="sec_energy_ees" style="display:none;"></div>
+            <div id="sec_energy_ed" style="display:none;"></div>
+
+            <div class="row section"><em>- ANGOLI DI INGRESSO E USCITA -</em></div>
+            <div id="sec_angles"></div>
+
+            <div class="row section"><em>- COORDINATE BARICENTRICHE -</em> <span class="hint">Se gdl=2 e chiusura_triangoli=0, cicloide_avanzata=0, stima_PDOF=0 non vengono richieste (default ±2)</span></div>
+            <div id="sec_coords"></div>
+          </div>
+
+          <div class="row" style="margin-top:1rem;"><strong>Parametri target</strong></div>
+          <div id="targetRows"></div>
         </div>
 
+        <!-- Rimosso: Override di N iterazioni -->
 
         <div class="actions">
-          <button type="submit">Esegui Monte Carlo</button>
+          <button id="btnRun" type="submit">Esegui Monte Carlo</button>
         </div>
       </form>
+
+      <div id="progress" class="progress"><div class="bar" id="bar"></div></div>
+      <div id="eta" class="eta">Tempo rimanente stimato: <span id="etaText">—</span></div>
     </div>
 
+    <script>
+      const form = document.getElementById('mcForm');
+      const btn = document.getElementById('btnRun');
+      const progressBox = document.getElementById('progress');
+      const bar = document.getElementById('bar');
+      const eta = document.getElementById('eta');
+      const etaText = document.getElementById('etaText');
+      const secUpload = document.getElementById('section-upload');
+      const secManual = document.getElementById('section-manual');
+      document.querySelectorAll('input[name="input_mode"]').forEach(r=>{
+        r.addEventListener('change',()=>{
+          const mode = document.querySelector('input[name="input_mode"]:checked').value;
+          if (mode==='manual'){ secManual.style.display='block'; secUpload.style.display='none'; }
+          else { secManual.style.display='none'; secUpload.style.display='block'; }
+        });
+      });
+
+      function rowTemplate(prefix){
+        return `
+          <div class="row" data-row>
+            <input name="${prefix}_name[]" placeholder="nome" style="width:160px;">
+            <label style="margin-left:.5rem;">
+              <input type="checkbox" name="${prefix}_rangeflag[]"> Range
+            </label>
+            <input name="${prefix}_mode[]" type="hidden" value="single">
+            <input name="${prefix}_v1[]" placeholder="valore" style="width:120px; margin-left:.5rem;">
+            <input name="${prefix}_v2[]" placeholder="valore max" style="width:120px; display:none;">
+            <button type="button" data-del style="margin-left:.5rem;">Rimuovi</button>
+          </div>`;
+      }
+      function bindRows(container, prefix){
+        container.addEventListener('change', (e)=>{
+          const row = e.target.closest('[data-row]'); if (!row) return;
+          if (e.target.name===`${prefix}_rangeflag[]`){
+            const isRange = e.target.checked;
+            const v2 = row.querySelector(`input[name='${prefix}_v2[]']`);
+            const mode = row.querySelector(`input[name='${prefix}_mode[]']`);
+            const v1 = row.querySelector(`input[name='${prefix}_v1[]']`);
+            if (v2) v2.style.display = isRange ? 'inline-block' : 'none';
+            if (mode) mode.value = isRange ? 'range' : 'single';
+            if (v1) v1.placeholder = isRange ? 'valore min' : 'valore';
+          }
+        });
+        container.addEventListener('click', (e)=>{
+          if (e.target.matches('[data-del]')){ e.target.closest('[data-row]').remove(); }
+        });
+      }
+      const datiRows = document.getElementById('datiRows');
+      bindRows(datiRows, 'man_dati');
+
+      function fixedField(containerId, key, label, unit, withTarget=false){
+        const c = document.getElementById(containerId);
+        if (!c) return;
+        const row = document.createElement('div');
+        row.className='row'; row.setAttribute('data-row','');
+        row.innerHTML = `
+          <div class="model-row">
+            <div>${label}</div>
+            <div><code>${key}</code><input type="hidden" name="man_dati_name[]" value="${key}"></div>
+            <label style="white-space:nowrap;"><input type="checkbox" name="man_dati_rangeflag[]"> Range</label>
+            <div class="vals">
+              <input name="man_dati_mode[]" type="hidden" value="single">
+              <input name="man_dati_v1[]" placeholder="valore">
+              <input name="man_dati_v2[]" placeholder="valore max" style="display:none;">
+            </div>
+            <div class="target-col" ${withTarget?'' : 'style="display:none;"'}>
+              ${withTarget ? `
+                <input type="hidden" name="man_target_name[]" value="${key}">
+                <input type="hidden" name="man_target_mode[]" value="single">
+                <input name="man_target_v1[]" placeholder="valore target">
+              ` : ''}
+            </div>
+            <div>${unit||''}</div>
+          </div>`;
+        c.appendChild(row);
+      }
+
+      // Vehicle 1/2
+      fixedField('sec_vehicle1','m1','Massa (veicolo 1)','kg');
+      fixedField('sec_vehicle1','l1','Lunghezza (veicolo 1)','m');
+      fixedField('sec_vehicle1','p1','Passo (veicolo 1)','m');
+      fixedField('sec_vehicle2','m2','Massa (veicolo 2)','kg');
+      fixedField('sec_vehicle2','l2','Lunghezza (veicolo 2)','m');
+      fixedField('sec_vehicle2','p2','Passo (veicolo 2)','m');
+
+      // Post-impact (cicloide=1)
+      fixedField('sec_post_cicloide','d_post1','Distanza post-urto (veicolo 1)','m');
+      fixedField('sec_post_cicloide','d_post2','Distanza post-urto (veicolo 2)','m');
+      fixedField('sec_post_cicloide','theta_post1','Rotazione post-urto (veicolo 1)','deg');
+      fixedField('sec_post_cicloide','theta_post2','Rotazione post-urto (veicolo 2)','deg');
+      fixedField('sec_post_cicloide','f1','Coefficiente attrito post-urto (veicolo 1)','');
+      fixedField('sec_post_cicloide','f2','Coefficiente attrito post-urto (veicolo 2)','');
+
+      // Post-impact advanced (cicloide_avanzata=1)
+      fixedField('sec_post_cicloide_av','x1_quiete','X baricentro a quiete (veicolo 1)','m');
+      fixedField('sec_post_cicloide_av','y1_quiete','Y baricentro a quiete (veicolo 1)','m');
+      fixedField('sec_post_cicloide_av','x2_quiete','X baricentro a quiete (veicolo 2)','m');
+      fixedField('sec_post_cicloide_av','y2_quiete','Y baricentro a quiete (veicolo 2)','m');
+
+      // Post-impact when cicloide=0
+      fixedField('sec_post_nocicloide','V1_post_Kmh','Velocità post-urto (veicolo 1)','km/h');
+      fixedField('sec_post_nocicloide','V2_post_Kmh','Velocità post-urto (veicolo 2)','km/h');
+      fixedField('sec_post_nocicloide','omega1_post','Velocità angolare post-urto (veicolo 1)','rad/s');
+      fixedField('sec_post_nocicloide','omega2_post','Velocità angolare post-urto (veicolo 2)','rad/s');
+
+      // Cicloide nota
+      // Rimosso avviso superfluo su d_post1/d_post2
+      fixedField('sec_post_cicloide_nota','lunghezza_cicloide_1','Lunghezza cicloide (veicolo 1)','m');
+      fixedField('sec_post_cicloide_nota','lunghezza_cicloide_2','Lunghezza cicloide (veicolo 2)','m');
+
+      // Energy
+      fixedField('sec_energy_ees','EES1_Kmh','EES (veicolo 1)','km/h');
+      fixedField('sec_energy_ees','EES2_Kmh','EES (veicolo 2)','km/h');
+      fixedField('sec_energy_ed','Ed_target','Energia di deformazione','J');
+
+      // Angles
+      fixedField('sec_angles','theta1_in','Angolo ingresso (veicolo 1)','deg', true);
+      fixedField('sec_angles','theta1_out','Angolo uscita (veicolo 1)','deg', true);
+      fixedField('sec_angles','theta2_in','Angolo ingresso (veicolo 2)','deg', true);
+      fixedField('sec_angles','theta2_out','Angolo uscita (veicolo 2)','deg', true);
+
+      // Coordinates
+      fixedField('sec_coords','x1','X baricentro (veicolo 1)','m', true);
+      fixedField('sec_coords','y1','Y baricentro (veicolo 1)','m', true);
+      fixedField('sec_coords','x2','X baricentro (veicolo 2)','m', true);
+      fixedField('sec_coords','y2','Y baricentro (veicolo 2)','m', true);
+
+      function toggleSections(){
+        const get = n=>document.querySelector(`[name='man_${n}']`)?.value||'';
+        const C = get('cicloide');
+        const CA = get('cicloide_avanzata');
+        const CN = get('cicloide_nota');
+        const EE = get('energia_EES');
+        const ST = get('stima_PDOF');
+        const CT = get('chiusura_triangoli');
+        const G = document.getElementById('man_gdl')?.value||'';
+        document.getElementById('sec_post_cicloide').style.display = (C==='1') ? 'block':'none';
+        document.getElementById('sec_post_cicloide_av').style.display = (CA==='1') ? 'block':'none';
+        document.getElementById('sec_post_nocicloide').style.display = (C==='0') ? 'block':'none';
+        document.getElementById('sec_post_cicloide_nota').style.display = (CN==='1') ? 'block':'none';
+        document.getElementById('sec_energy_ees').style.display = (EE==='1') ? 'block':'none';
+        document.getElementById('sec_energy_ed').style.display = (EE==='0') ? 'block':'none';
+        const hideCoords = (G==='2' && CT!=='1' && CA!=='1' && ST!=='1');
+        document.getElementById('sec_coords').style.display = hideCoords ? 'none':'block';
+        // Target visibility rules
+        const needCoordsTarget = (G==='3' || CT==='1' || ST==='1');
+        // toggle target column for coordinates
+        document.querySelectorAll('#sec_coords .target-col').forEach(el=>{
+          // Coordinates targets only if needCoordsTarget
+          el.style.display = needCoordsTarget ? '' : 'none';
+        });
+        // omega targets visibility (gdl=3) and PDOF target visibility
+        const omegaBlk = document.getElementById('tgt_omega');
+        if (omegaBlk) omegaBlk.style.display = (G==='3') ? 'block' : 'none';
+        const pdofBlk = document.getElementById('tgt_pdof');
+        const showPDOF = (CT==='1' || G==='3' || ST==='1');
+        if (pdofBlk) pdofBlk.style.display = showPDOF ? 'block' : 'none';
+      }
+      // Rimuove l'hint testuale nella sezione coordinate, se presente
+      (function(){
+        const sections = document.querySelectorAll('.row.section');
+        sections.forEach(s=>{
+          if (s.textContent && s.textContent.includes('COORDINATE BARICENTRICHE')){
+            const hint = s.querySelector('.hint'); if (hint) hint.remove();
+          }
+        });
+      })();
+      ['man_cicloide','man_cicloide_avanzata','man_cicloide_nota','man_energia_EES','man_stima_PDOF','man_chiusura_triangoli','man_gdl'].forEach(id=>{
+        const el = document.getElementsByName(id)[0] || document.getElementById(id);
+        if (el) el.addEventListener('change', toggleSections);
+      });
+      toggleSections();
+
+      // Sezione targets fissi (in fondo)
+      (function(){
+        const cont = document.getElementById('targetRows');
+        if (!cont) return;
+        // PDOF
+        const r1 = document.createElement('div'); r1.className='row'; r1.id='tgt_pdof';
+        r1.innerHTML = `
+          <div class="model-row">
+            <div>PDOF target</div>
+            <div><code>PDOF</code><input type="hidden" name="man_target_name[]" value="PDOF"></div>
+            <div></div>
+            <div class="vals">
+              <input type="hidden" name="man_target_mode[]" value="single">
+              <input name="man_target_v1[]" placeholder="valore">
+              <input style="display:none;">
+            </div>
+            <div>deg</div>
+            <div></div>
+          </div>`;
+        cont.appendChild(r1);
+
+        // omega1_pre, omega2_pre
+        const omegaWrap = document.createElement('div'); omegaWrap.id='tgt_omega';
+        ;['omega1_pre','omega2_pre'].forEach((key, idx)=>{
+          const row = document.createElement('div'); row.className='row';
+          row.innerHTML = `
+            <div class="model-row">
+              <div>Velocità angolare pre-urto (${idx===0?'veicolo 1':'veicolo 2'})</div>
+              <div><code>${key}</code><input type="hidden" name="man_target_name[]" value="${key}"></div>
+              <div></div>
+              <div class="vals">
+                <input type="hidden" name="man_target_mode[]" value="single">
+                <input name="man_target_v1[]" placeholder="valore">
+                <input style="display:none;">
+              </div>
+              <div>rad/s</div>
+              <div></div>
+            </div>`;
+          omegaWrap.appendChild(row);
+        });
+        cont.appendChild(omegaWrap);
+        // Apply initial visibility rules now that nodes exist
+        toggleSections();
+      })();
+
+      function fmtEta(sec){ if (sec==null || !isFinite(sec)) return '—'; const s=Math.max(0,Math.round(sec)); const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const ss=s%60; return `${h>0?h+':':''}${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; }
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        btn.disabled = true;
+        progressBox.style.display = 'block';
+        eta.style.display = 'block';
+        bar.style.width = '0%'; etaText.textContent = '—';
+        const fd = new FormData(form);
+        try {
+          const resp = await fetch('{{ url_for('start_async') }}', { method: 'POST', body: fd });
+          const data = await resp.json();
+          if (!resp.ok){ alert(data.error || 'Errore di avvio'); btn.disabled=false; return; }
+          const runId = data.run_id;
+          const t = setInterval(async ()=>{
+            const r = await fetch(`/api/progress/${runId}`);
+            if (!r.ok) return; const p = await r.json();
+            const cur = p.current||0, tot=p.total||0; const pct = tot>0 ? Math.min(100, Math.floor(cur*100/tot)) : (p.done?100:0);
+            bar.style.width = pct + '%'; etaText.textContent = fmtEta(p.eta_seconds);
+            if (p.done){ clearInterval(t); if (p.error){ alert('Errore: '+p.error); btn.disabled=false; return; } window.location.href = `/result/${runId}`; }
+          }, 500);
+        } catch(err){ alert('Errore: '+err); btn.disabled=false; }
+      });
+    </script>
   </body>
   </html>

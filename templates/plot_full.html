@@ -38,7 +38,34 @@
 
       function deg2rad(d){ return d * Math.PI / 180; }
       function vec(x,y, len, angDeg) { const a = deg2rad(angDeg); return {x: x + len*Math.cos(a), y: y + len*Math.sin(a)}; }
-      function arrow(x0,y0, x1,y1, color) { return { type: 'scatter', x:[x0,x1], y:[y0,y1], mode:'lines', line:{color, width:2} }; }
+      function arrow(x0,y0, x1,y1, color, name) { return { type: 'scatter', x:[x0,x1], y:[y0,y1], mode:'lines', line:{color, width:2}, name }; }
+      function legendCorner(c){ const map={tr:[1,1,'right','top'], tl:[0,1,'left','top'], br:[1,0,'right','bottom'], bl:[0,0,'left','bottom']}; return map[c]||map.tr; }
+      function buildLayoutControls(){
+        const ctrls = document.getElementById('controls');
+        if (!ctrls) return;
+        let wrap = document.getElementById('layout-ctrls');
+        if (!wrap){
+          wrap = document.createElement('div');
+          wrap.id = 'layout-ctrls';
+          wrap.style.display='flex'; wrap.style.gap='8px'; wrap.style.alignItems='center';
+          ctrls.appendChild(wrap);
+        }
+        wrap.innerHTML = `
+          <span>Posizione titolo</span>
+          <label>X <input id=\"tx\" type=\"range\" min=\"0\" max=\"1\" step=\"0.01\" value=\"0.5\" style=\"width:120px;\"></label>
+          <label>Y <input id=\"ty\" type=\"range\" min=\"0\" max=\"1\" step=\"0.01\" value=\"0.95\" style=\"width:120px;\"></label>
+          <span>|</span>
+          <label>Legenda
+            <select id=\"leg\">
+              <option value=\"tr\">in alto a destra</option>
+              <option value=\"tl\">in alto a sinistra</option>
+              <option value=\"br\">in basso a destra</option>
+              <option value=\"bl\">in basso a sinistra</option>
+            </select>
+          </label>`;
+        function apply(){ const v=legendCorner(document.getElementById('leg').value); Plotly.relayout('plot', {'title.x':parseFloat(document.getElementById('tx').value),'title.y':parseFloat(document.getElementById('ty').value),'legend.x':v[0],'legend.y':v[1],'legend.xanchor':v[2],'legend.yanchor':v[3]}); }
+        document.getElementById('tx').oninput=apply; document.getElementById('ty').oninput=apply; document.getElementById('leg').onchange=apply;
+      }
 
       async function loadInputs() {
         const res = await fetch(`/api/run/${runId}/graph_inputs`);
@@ -73,10 +100,10 @@
         const v2pre = vec(g.x2, g.y2, scale*g.V2_pre, g.theta2_in);
         const v2post= vec(g.x2, g.y2, scale*g.V2_post, g.theta2_out);
         const traces = [
-          arrow(g.x1, g.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
-          arrow(g.x1, g.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
-          arrow(g.x2, g.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
-          arrow(g.x2, g.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+          arrow(g.x1, g.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
+          arrow(g.x1, g.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
+          arrow(g.x2, g.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
+          arrow(g.x2, g.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
         ];
 
         const shapes = [];
@@ -84,13 +111,23 @@
           {x:g.x1, y:g.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
           {x:g.x2, y:g.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
         ];
+        const arrs = [
+          {x0:g.x1, y0:g.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
+          {x0:g.x1, y0:g.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
+          {x0:g.x2, y0:g.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
+          {x0:g.x2, y0:g.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+        ];
+        for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
         if (g.PDOF_stima != null) {
           const r = 5; const a = deg2rad(g.PDOF_stima);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'magenta', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+'°', showarrow:false, font:{color:'magenta'}});
         }
-        const layout = { title: 'Rappresentazione vettoriale', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations, margin:{t:40,l:60,r:10,b:60} };
-        Plotly.newPlot('plot', traces, layout, {responsive:true});
+        const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Rappresentazione vettoriale', showarrow:false, font:{size:16}};
+        annotations.push(titleAnn);
+        const layout = { xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations, margin:{t:60,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
+        buildLayoutControls();
       }
 
       function drawTriangoli(t) {
@@ -100,23 +137,32 @@
         const v2pre = vec(t.x2, t.y2, scale*t.V2_pre, t.theta2_in_t);
         const v2post= vec(t.x2, t.y2, scale*t.V2_post_t, t.theta2_out_t);
         const traces = [
-          arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
-          arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
-          arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
-          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+          arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
+          arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
+          arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
+          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
         ];
         const shapes = [];
         const annotations = [
           {x:t.x1, y:t.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
           {x:t.x2, y:t.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
         ];
+        const arrs = [
+          {x0:t.x1, y0:t.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
+          {x0:t.x1, y0:t.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
+          {x0:t.x2, y0:t.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
+          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+        ];
+        for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
         if (t.PDOF_eff != null) {
           const r = 5; const a = deg2rad(t.PDOF_eff);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'black', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: t.PDOF_eff.toFixed(1)+'°', showarrow:false});
         }
-        const layout = { title: 'Chiusura triangoli', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations, margin:{t:40,l:60,r:10,b:60} };
-        Plotly.newPlot('plot', traces, layout, {responsive:true});
+        const titleAnn2 = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Chiusura triangoli', showarrow:false, font:{size:16}};
+        annotations.push(titleAnn2);
+        const layout = { xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations, margin:{t:60,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
       }
 
       function drawCicloidi(c) {
@@ -132,8 +178,9 @@
           const L=3, a=deg2rad(c.ang2);
           shapes.push({type:'line', x0:c.A2[0]-L*Math.cos(a), y0:c.A2[1]-L*Math.sin(a), x1:c.A2[0]+L*Math.cos(a), y1:c.A2[1]+L*Math.sin(a), line:{color:'magenta', dash:'dash'}});
         }
-        const layout = { title:'Cicloidi post-urto', xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, margin:{t:40,l:60,r:10,b:60} };
-        Plotly.newPlot('plot', traces, layout, {responsive:true});
+        const titleAnn3 = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Cicloidi post-urto', showarrow:false, font:{size:16}};
+        const layout = { xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, margin:{t:60,l:60,r:10,b:60}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, annotations:[titleAnn3] };
+        Plotly.newPlot('plot', traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
       }
 
       function sign(x){ return x>=0?1:-1; }
@@ -257,11 +304,12 @@
           drawCicloidi(data.cicloidi||{});
         } else if (kind === 'pdof') {
           drawPDOFCone(data, false);
+          buildLayoutControls();
         } else if (kind === 'pdof_tri') {
           drawPDOFCone(data, true);
+          buildLayoutControls();
         }
       })();
     </script>
   </body>
   </html>
-
