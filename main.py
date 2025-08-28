@@ -125,35 +125,5 @@ if cicloide_avanzata == 1:
 # Lista variabili plottabili
 variabili = [col for col in df_validi.columns if not col.lower().startswith(('errore_', 'err_'))]
 
-# === Backup ===
-risposta = input("\n💾 Vuoi salvare un backup versione in 'backup/'? [s/N]: ").strip().lower()
-if risposta == 's':
-    # Salva tutte le variabili di controllo
-    controlli = ["cicloide", "cicloide_avanzata", "cicloide_nota", "energia_EES", "stima_PDOF", "chiusura_triangoli", "gdl"]
-    for key in controlli:
-        valore = parametri[key]
-        if isinstance(valore, (tuple, list)):
-            valore = valore[0]
-        riga_minima[f"p_{key}"] = int(valore)
-
-
-    # Salva tutti i parametri
-    for key in parametri:
-        riga_minima[f"p_{key}"] = parametri[key]
-
-    # Salva tutti i targets
-    for key in targets:
-        riga_minima[f"t_{key}"] = targets[key]
-
-    # Salva tutte le voci del listato
-    for key in vars(dati_listato):
-        riga_minima[f"l_{key}"] = getattr(dati_listato, key)
-
-
-    salva_backup_versionato(risultati_validi, riga_minima)
-else:
-    print("📎 Backup non salvato.")
-
-
 # plot interattivo
 mostra_interfaccia_grafico(df_validi, riga_minima, variabili)

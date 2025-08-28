@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MC-Impact • Plot</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      #root { position: absolute; inset: 0; display: flex; flex-direction: column; }
+      header { padding: 8px 12px; font-family: system-ui, Arial, sans-serif; border-bottom: 1px solid #eee; display:flex; gap:12px; align-items:center; }
+      header a { color: #2c7be5; text-decoration: none; }
+      #controls { display:flex; gap:8px; align-items:center; }
+      #plot { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <header>
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>•</span>
+        <a href="{{ url_for('run') }}" onclick="history.back(); return false;">Torna ai risultati</a>
+        <div id="controls"></div>
+      </header>
+      <div id="plot"></div>
+    </div>
+
+    <script>
+      const kind = {{ kind|tojson }};
+      const runId = {{ run_id|tojson }};
+
+      function el(tag, attrs={}, children=[]) {
+        const e = document.createElement(tag);
+        Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k,v));
+        children.forEach(c => e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
+        return e;
+      }
+
+      function deg2rad(d){ return d * Math.PI / 180; }
+      function vec(x,y, len, angDeg) { const a = deg2rad(angDeg); return {x: x + len*Math.cos(a), y: y + len*Math.sin(a)}; }
+      function arrow(x0,y0, x1,y1, color) { return { type: 'scatter', x:[x0,x1], y:[y0,y1], mode:'lines', line:{color, width:2} }; }
+
+      async function loadInputs() {
+        const res = await fetch(`/api/run/${runId}/graph_inputs`);
+        const data = await res.json();
+        return data;
+      }
+
+      function buildScatterControls(variabili, colonne_errori) {
+        const xSel = el('select', { id:'selX' }, variabili.map(v=>el('option',{},[v])));
+        const ySel = el('select', { id:'selY' }, variabili.map(v=>el('option',{},[v])));
+        const cSel = el('select', { id:'selC' }, colonne_errori.map(v=>el('option',{},[v])));
+        xSel.selectedIndex = 0; ySel.selectedIndex = Math.min(1, variabili.length-1); cSel.selectedIndex = 0;
+        const label = el('span',{},['Seleziona: X, Y, Colorbar']);
+        const container = document.getElementById('controls');
+        container.append(label, xSel, ySel, cSel);
+        async function render() {
+          const x = xSel.value, y = ySel.value, c = cSel.value;
+          const r = await fetch(`/api/run/${runId}/scatter?x=${encodeURIComponent(x)}&y=${encodeURIComponent(y)}&c=${encodeURIComponent(c)}&limit=200000`);
+          const d = await r.json();
+          const trace = { x: d.x, y: d.y, mode: 'markers', type: 'scatter', marker: { color: d.c, colorscale: 'Viridis', showscale: true, size: 6, opacity: 0.7 } };
+          const layout = { xaxis: { title: x }, yaxis: { title: y }, margin: { t: 40, l:60, r:10, b:60 }, title: `${y} in funzione di ${x}` };
+          Plotly.newPlot('plot', [trace], layout, {responsive:true});
+        }
+        xSel.addEventListener('change', render); ySel.addEventListener('change', render); cSel.addEventListener('change', render);
+        render();
+      }
+
+      function drawVectors(g) {
+        const scale = 0.04;
+        const v1pre = vec(g.x1, g.y1, scale*g.V1_pre, g.theta1_in);
+        const v1post= vec(g.x1, g.y1, scale*g.V1_post, g.theta1_out);
+        const v2pre = vec(g.x2, g.y2, scale*g.V2_pre, g.theta2_in);
+        const v2post= vec(g.x2, g.y2, scale*g.V2_post, g.theta2_out);
+        const traces = [
+          arrow(g.x1, g.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
+          arrow(g.x1, g.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
+          arrow(g.x2, g.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
+          arrow(g.x2, g.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+        ];
+
+        const shapes = [];
+        const annotations = [
+          {x:g.x1, y:g.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
+          {x:g.x2, y:g.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
+        ];
+        if (g.PDOF_stima != null) {
+          const r = 5; const a = deg2rad(g.PDOF_stima);
+          shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'magenta', width:2}});
+          annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+'°', showarrow:false, font:{color:'magenta'}});
+        }
+        const layout = { title: 'Rappresentazione vettoriale', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations, margin:{t:40,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', traces, layout, {responsive:true});
+      }
+
+      function drawTriangoli(t) {
+        const scale = 0.04;
+        const v1pre = vec(t.x1, t.y1, scale*t.V1_pre, t.theta1_in_t);
+        const v1post= vec(t.x1, t.y1, scale*t.V1_post_t, t.theta1_out_t);
+        const v2pre = vec(t.x2, t.y2, scale*t.V2_pre, t.theta2_in_t);
+        const v2post= vec(t.x2, t.y2, scale*t.V2_post_t, t.theta2_out_t);
+        const traces = [
+          arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)'),
+          arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)'),
+          arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)'),
+          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)')
+        ];
+        const shapes = [];
+        const annotations = [
+          {x:t.x1, y:t.y1, text:'G1', showarrow:false, font:{color:'blue', size:12}},
+          {x:t.x2, y:t.y2, text:'G2', showarrow:false, font:{color:'red', size:12}}
+        ];
+        if (t.PDOF_eff != null) {
+          const r = 5; const a = deg2rad(t.PDOF_eff);
+          shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'black', width:2}});
+          annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: t.PDOF_eff.toFixed(1)+'°', showarrow:false});
+        }
+        const layout = { title: 'Chiusura triangoli', xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:false, shapes, annotations, margin:{t:40,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', traces, layout, {responsive:true});
+      }
+
+      function drawCicloidi(c) {
+        const traces = [];
+        if (c.x1 && c.y1) traces.push({type:'scatter', mode:'lines', x:c.x1, y:c.y1, name:'Cicloide 1'});
+        if (c.x2 && c.y2) traces.push({type:'scatter', mode:'lines', x:c.x2, y:c.y2, name:'Cicloide 2'});
+        const shapes = [];
+        if (c.A1 && c.ang1 != null) {
+          const L=3, a=deg2rad(c.ang1);
+          shapes.push({type:'line', x0:c.A1[0]-L*Math.cos(a), y0:c.A1[1]-L*Math.sin(a), x1:c.A1[0]+L*Math.cos(a), y1:c.A1[1]+L*Math.sin(a), line:{color:'green', dash:'dash'}});
+        }
+        if (c.A2 && c.ang2 != null) {
+          const L=3, a=deg2rad(c.ang2);
+          shapes.push({type:'line', x0:c.A2[0]-L*Math.cos(a), y0:c.A2[1]-L*Math.sin(a), x1:c.A2[0]+L*Math.cos(a), y1:c.A2[1]+L*Math.sin(a), line:{color:'magenta', dash:'dash'}});
+        }
+        const layout = { title:'Cicloidi post-urto', xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, margin:{t:40,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', traces, layout, {responsive:true});
+      }
+
+      function sign(x){ return x>=0?1:-1; }
+      function mod360(deg){ return ((deg%360)+360)%360; }
+      function toDeg(rad){ return rad*180/Math.PI; }
+      function toRad(deg){ return deg*Math.PI/180; }
+
+      function drawPDOFCone(data, useEff=false) {
+        const meta = data._meta || {}; const params = meta.parametri||{}; const targets = meta.targets||{};
+        const t = data.vectors; // use riga_minima fields
+        if (!t) return;
+
+        const V1_pre = (t.V1_pre||0)/3.6, V1_post=(t.V1_post||0)/3.6, V2_pre=(t.V2_pre||0)/3.6, V2_post=(t.V2_post||0)/3.6;
+        const th1_in = t.theta1_in||0, th1_out=t.theta1_out||0, th2_in=t.theta2_in||0, th2_out=t.theta2_out||0;
+        const J1 = t.J1||0, J2=t.J2||0;
+        const w1_pre=t.omega1_pre||0, w1_post=t.omega1_post||0, w2_pre=t.omega2_pre||0, w2_post=t.omega2_post||0;
+        const x1=t.x1||0, y1=t.y1||0, x2=t.x2||0, y2=t.y2||0;
+        const m1 = params.m1? (Array.isArray(params.m1)? params.m1[0]: params.m1) : 1;
+        const m2 = params.m2? (Array.isArray(params.m2)? params.m2[0]: params.m2) : 1;
+
+        function diffVec(vpre, a1, vpost, a2) {
+          const ax1 = toRad(a1), ax2 = toRad(a2);
+          const vx1 = vpre*Math.cos(ax1), vy1 = vpre*Math.sin(ax1);
+          const vx2 = vpost*Math.cos(ax2), vy2 = vpost*Math.sin(ax2);
+          const dx = vx2 - vx1, dy = vy2 - vy1;
+          const mag = Math.hypot(dx,dy);
+          const ang = mod360(toDeg(Math.atan2(dy,dx)));
+          return [mag, ang];
+        }
+        const [dV1,_a1] = diffVec(V1_pre, th1_in, V1_post, th1_out);
+        const [dV2,_a2] = diffVec(V2_pre, th2_in, V2_post, th2_out);
+        const Imax1 = Math.abs(m1 * dV1), Imax2 = Math.abs(m2 * dV2);
+        const h1_min = Math.abs(J1 * (w1_pre - w1_post) / (Imax1||1e-9));
+        const h2_min = Math.abs(J2 * (w2_pre - w2_post) / (Imax2||1e-9));
+
+        const r1 = Math.hypot(x1,y1), r2=Math.hypot(x2,y2);
+        const thG1 = Math.atan2(y1,x1), thG2 = Math.atan2(y2,x2);
+        const alfa1 = Math.asin(Math.min(1, h1_min / Math.max(r1,1e-9)));
+        const alfa2 = Math.asin(Math.min(1, h2_min / Math.max(r2,1e-9)));
+        const PDOF1 = (thG1 + Math.sign(w1_post) * -alfa1);
+        const PDOF2 = (thG2 + Math.sign(w2_post) * -alfa2);
+
+        function angolo_cardinale_nel_verso(PDOF, verso, theta_altro) {
+          const card = [0, Math.PI/2, Math.PI, 3*Math.PI/2];
+          function quad(theta){ if (0<=theta && theta<Math.PI/2) return 0; if (Math.PI/2<=theta && theta<Math.PI) return 1; if (Math.PI<=theta && theta<3*Math.PI/2) return 2; return 3; }
+          const q = quad((theta_altro%(2*Math.PI)+2*Math.PI)%(2*Math.PI));
+          const sx = card[q], dx = card[(q+1)%4];
+          let dSx, dDx; if (verso===1){ dSx=(sx-PDOF+2*Math.PI)%(2*Math.PI); dDx=(dx-PDOF+2*Math.PI)%(2*Math.PI);} else { dSx=(PDOF-sx+2*Math.PI)%(2*Math.PI); dDx=(PDOF-dx+2*Math.PI)%(2*Math.PI);} 
+          return dSx<dDx? sx: dx;
+        }
+        function angolo_cardinale(PDOF, verso, cardinali){
+          if (verso===0) return PDOF; const arr=cardinali; let delta;
+          if (verso===-1){ delta = arr.map(c=> (PDOF - c + 2*Math.PI)%(2*Math.PI)); }
+          else { delta = arr.map(c=> (c - PDOF + 2*Math.PI)%(2*Math.PI)); }
+          let idx = 0, min=1e9; for (let i=0;i<delta.length;i++){ if (delta[i]<min){min=delta[i]; idx=i;} }
+          return arr[idx];
+        }
+
+        const verso1 = -Math.sign(w1_post) || 0; const verso2 = -Math.sign(w2_post) || 0;
+        const a = angolo_cardinale_nel_verso(PDOF1%(2*Math.PI), verso1, thG2);
+        const b = angolo_cardinale_nel_verso(PDOF2%(2*Math.PI), verso2, thG1);
+        const cardinali = [a,b];
+        let range1 = angolo_cardinale(PDOF1%(2*Math.PI), verso1, cardinali);
+        let range2 = angolo_cardinale(PDOF2%(2*Math.PI), verso2, cardinali);
+
+        const a1 = PDOF1%(2*Math.PI), a2 = PDOF2%(2*Math.PI);
+        const a1_op = (a1+Math.PI)%(2*Math.PI), a2_op = (a2+Math.PI)%(2*Math.PI);
+
+        const w1 = Imax1, w2 = Imax2;
+        const r1_plot = Math.min(2, 2 * (w1/Math.max(w1,w2||1e-9)));
+        const r2_plot = Math.min(2, 2 * (w2/Math.max(w1,w2||1e-9)));
+        const r_max = Math.max(r1_plot, r2_plot, r1, r2) + 0.5;
+
+        const traces = [];
+        function sector(t1, t2, r, color){
+          t1=(t1+2*Math.PI)%(2*Math.PI); t2=(t2+2*Math.PI)%(2*Math.PI);
+          const pts=[]; const step = 64; let wrap=false;
+          if (t2 < t1) { wrap=true; }
+          function pushArc(from,to){ for (let i=0;i<=step;i++){ const t=from + (to-from)*i/step; pts.push({theta: toDeg(t), r}); } }
+          if (!wrap) pushArc(t1,t2); else { pushArc(t1,2*Math.PI); pushArc(0,t2); }
+          // close to center
+          pts.push({theta: pts[pts.length-1].theta, r:0}); pts.push({theta: pts[0].theta, r:0});
+          traces.push({type:'scatterpolar', mode:'lines', r: pts.map(p=>p.r), theta: pts.map(p=>p.theta), fill:'toself', fillcolor:'rgba(0,128,0,0.25)', line:{width:0}});
+        }
+        // sectors and their opposites
+        sector(range1, a1, 2.5, 'green'); sector((range1+Math.PI)%(2*Math.PI), (a1+Math.PI)%(2*Math.PI), 2.5, 'green');
+        sector(range2, a2, 2.5, 'green'); sector((range2+Math.PI)%(2*Math.PI), (a2+Math.PI)%(2*Math.PI), 2.5, 'green');
+
+        // Opposite arcs at r_max (cosmetic like matplotlib)
+        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a1_op), toDeg(a1)], mode:'lines', line:{color:'rgba(204,217,255,1)', width:2}});
+        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a2_op), toDeg(a2)], mode:'lines', line:{color:'rgba(255,204,204,1)', width:2}});
+
+        // Vectors
+        traces.push({type:'scatterpolar', r:[0, r1_plot], theta:[0, toDeg(a1)], mode:'lines', line:{color:'blue', width:2}, name:'PDOF veicolo 1'});
+        traces.push({type:'scatterpolar', r:[0, r2_plot], theta:[0, toDeg(a2)], mode:'lines', line:{color:'red', width:2}, name:'PDOF veicolo 2'});
+
+        // Target, opposite and stima/eff
+        let targetDeg = null; if (!useEff && targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
+        if (useEff && t.PDOF_eff != null) targetDeg = t.PDOF_eff;
+        if (targetDeg != null){ const opp = (targetDeg+180)%360; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,targetDeg], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); }
+        if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); }
+
+        // G1, G2 markers
+        traces.push({type:'scatterpolar', mode:'markers+text', r:[r1], theta:[toDeg(thG1)], marker:{color:'blue', size:8}, text:['G1'], textposition:'top center', showlegend:false});
+        traces.push({type:'scatterpolar', mode:'markers+text', r:[r2], theta:[toDeg(thG2)], marker:{color:'red', size:8}, text:['G2'], textposition:'top center', showlegend:false});
+
+        const layout = { showlegend:true, margin:{t:40,l:10,r:10,b:10}, polar:{ radialaxis:{visible:true, range:[0,r_max] } }, title: useEff? 'Cono di validità PDOF (effettiva)':'Cono di validità PDOF (stima)'};
+        Plotly.newPlot('plot', traces, layout, {responsive:true});
+      }
+
+      (async function init(){
+        const data = await loadInputs();
+        if (kind === 'scatter') {
+          const ctrls = document.getElementById('controls');
+          buildScatterControls((data._meta && data._meta.variabili)||[], (data._meta && data._meta.colonne_errori)||[]);
+        } else if (kind === 'vectors') {
+          drawVectors(data.vectors);
+        } else if (kind === 'triangoli') {
+          drawTriangoli(data.triangoli);
+        } else if (kind === 'cicloidi') {
+          drawCicloidi(data.cicloidi||{});
+        } else if (kind === 'pdof') {
+          drawPDOFCone(data, false);
+        } else if (kind === 'pdof_tri') {
+          drawPDOFCone(data, true);
+        }
+      })();
+    </script>
+  </body>
+  </html>
+

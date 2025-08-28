@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import pandas as pd
 import os
 import numpy as np
-import pickle
 from datetime import datetime
 
 #leggere dati in input da file
