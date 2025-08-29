@@ -5,30 +5,31 @@ y1             = 	     -0.91
 x2             = 	      0.98
 y2             = 	      0.72
 
-theta1_in      = 	      3.89
-theta1_out     = 	    330.01
-theta2_in      = 	    174.65
-theta2_out     = 	    105.36
+theta1_in      = 	    356.18
+theta1_out     = 	    330.32
+theta2_in      = 	    162.92
+theta2_out     = 	    105.42
 
-V1_post        = 	      22.7
-V2_post        = 	     18.52
-V1_pre         = 	     50.86
-V2_pre         = 	      35.6
+V1_post        = 	     22.18
+V2_post        = 	     18.96
+V1_pre         = 	     49.84
+V2_pre         = 	     36.58
 
-omega1_post    = 	      3.43
-omega2_post    = 	      3.08
+omega1_post    = 	      3.45
+omega2_post    = 	      3.06
 omega1_pre     = 	       0.0
 omega2_pre     = 	       0.0
 
-Ed             = 	 125048.24
+Ed             = 	 123824.73
+PDOF_stima     = 	     14.13
 f1             = 	       0.5
 f2             = 	       0.7
+
 J1             = 	   1974.79
-
 J2             = 	    1877.8
-d_post1        = 	      5.55
-cicloide1      = 	      5.95
-d_post2        = 	      2.74
+d_post1        = 	      5.39
+cicloide1      = 	      5.79
 
-cicloide2      = 	      2.95
+d_post2        = 	      2.82
+cicloide2      = 	      3.03
 Ed_target      = 	 124202.15

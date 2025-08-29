@@ -10,7 +10,7 @@
     <style>
       :root { --brand-bg:#f6f8fb; --brand-text:#000000; --brand-accent:#2c7be5; }
       body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: url('{{ url_for('bg_image') }}') center/cover fixed no-repeat; color: #000 !important; }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
       .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin-left:auto; margin-right:auto; }
       table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
       th, td { border-bottom: 1px solid #eee; padding: 0.4rem; text-align: left; }
@@ -58,18 +58,33 @@
       </div>
 
       <div class="card">
-        <h2>Opzioni</h2>
-        <div class="actions" style="display:flex; flex-direction:column; gap:.5rem; align-items:flex-start;">
-          {% if files_available['risultati.txt'] %}
-            <a class="btn" href="{{ url_for('download', filename='risultati.txt') }}">risultati.txt</a>
-          {% endif %}
-          {% if files_available['listato.txt'] %}
-            <a class="btn" href="{{ url_for('download', filename='listato.txt') }}">listato.txt</a>
-          {% endif %}
-          <a class="btn" style="background:#868e96;" href="{{ url_for('index') }}">Home</a>
+        <h2>Parametri usati</h2>
+        <div class="kv">
+          {% for section, items in used_params_grouped %}
+            <div style="grid-column:1 / -1; margin-top:.25rem; font-weight:700; color:#333;">{{ section }}</div>
+            {% for k, v in items.items() %}
+              <div><strong>{{ k }}</strong></div>
+              <div>{{ v }}</div>
+              <div class="muted">{% if units and units.get(k) %}{{ units.get(k) }}{% endif %}</div>
+            {% endfor %}
+          {% endfor %}
         </div>
       </div>
-  </div>
+    </div>
+
+    {% if flags and flags.stima_PDOF %}
+    <div class="card" style="margin-top:1rem;">
+      <h2>Opzioni</h2>
+      <div class="actions" style="display:flex; flex-direction:column; gap:.5rem; align-items:flex-start;">
+        {% if files_available['risultati.txt'] %}
+          <a class="btn" href="{{ url_for('download', filename='risultati.txt') }}">risultati.txt</a>
+        {% endif %}
+        {% if files_available['listato.txt'] %}
+          <a class="btn" href="{{ url_for('download', filename='listato.txt') }}">listato.txt</a>
+        {% endif %}
+        <a class="btn" style="background:#868e96;" href="{{ url_for('index') }}">Home</a>
+      </div>
+    </div>
 
     <div class="card" style="margin-top:1rem;">
       <h2>Grafico MonteCarlo interattivo <small><a class="btn" href="{{ url_for('plot_full', kind='scatter', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
@@ -123,6 +138,7 @@
       if (img.complete){ const c=pick(); if(c) set(c.bg,c.txt,c.acc); } else img.addEventListener('load', ()=>{ const c=pick(); if(c) set(c.bg,c.txt,c.acc); });
     })();
   </script>
+    {% if flags and flags.chiusura_triangoli %}
     <div class="card" style="margin-top:1rem;">
       <h2>Chiusura triangoli <small><a class="btn" href="{{ url_for('plot_full', kind='triangoli', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
       <div id="ctrl-triangoli" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
@@ -141,7 +157,9 @@
       </div>
       <div id="triangoli" style="height:560px;"></div>
     </div>
+    {% endif %}
 
+    {% if flags and flags.cicloide_avanzata %}
     <div class="card" style="margin-top:1rem;">
       <h2>Cicloidi post-urto <small><a class="btn" href="{{ url_for('plot_full', kind='cicloidi', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
       <div id="ctrl-cicloidi" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
@@ -160,16 +178,20 @@
       </div>
       <div id="cicloidi" style="height:560px;"></div>
     </div>
+    {% endif %}
 
     <div class="card" style="margin-top:1rem;">
       <h2>Cono di validità PDOF <small>
         <a href="{{ url_for('plot_full', kind='pdof', run_id=run_id) }}" target="_blank">Stima (schermo intero)</a> -
         <a href="{{ url_for('plot_full', kind='pdof_tri', run_id=run_id) }}" target="_blank">Effettiva (schermo intero)</a>
       </small></h2>
+      <div id="ctrl-pdof" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
+        <label>Zoom <input id="pdofZoom" type="range" min="0.5" max="2.0" step="0.01" value="1.00" style="width:180px;"></label>
+      </div>
       <div id="pdof" style="height:520px;"></div>
     </div>
+    {% endif %}
 
-    
     <div class="card" id="explora" style="margin-top:1rem;">
       <h2>Esplora variabilità</h2>
       <div class="row">
@@ -265,16 +287,36 @@
           {x0:g.x2, y0:g.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
         ];
         for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
+        // Punto origine
+        traces.push({type:'scatter', x:[0], y:[0], mode:'markers', marker:{color:'black', size:6}, showlegend:false});
+        // Cerchio guida attorno a G1 (raggio = |V1_post| in scala)
+        const rG1 = Math.hypot(v1post.x-g.x1, v1post.y-g.y1);
+        { const xs=[],ys=[]; const n=64; for(let i=0;i<=n;i++){ const a=2*Math.PI*i/n; xs.push(g.x1 + rG1*Math.cos(a)); ys.push(g.y1 + rG1*Math.sin(a)); } traces.push({type:'scatter', x:xs, y:ys, mode:'lines', line:{color:'blue', width:1}, hoverinfo:'skip', showlegend:false}); }
+        annotations.push({x:g.x1+rG1, y:g.y1, text:'0°', showarrow:false, font:{color:'rgb(102,179,255)', size:10}});
+        // Archi degli angoli
+        function arcPts(cx,cy,r,deg){ const a1=deg*Math.PI/180; const n=Math.max(6,Math.round(Math.abs(deg)/6)); const xs=[],ys=[]; for(let i=0;i<=n;i++){ const t=i/n; const a=t*a1; xs.push(cx + r*Math.cos(a)); ys.push(cy + r*Math.sin(a)); } return [xs,ys]; }
+        const arcs=[
+          {cx:g.x1, cy:g.y1, r:0.5, ang:g.theta1_in,  color:'rgb(102,179,255)'},
+          {cx:g.x1, cy:g.y1, r:0.7, ang:g.theta1_out, color:'rgb(0,0,255)'},
+          {cx:g.x2, cy:g.y2, r:0.5, ang:g.theta2_in,  color:'rgb(255,128,128)'},
+          {cx:g.x2, cy:g.y2, r:0.7, ang:g.theta2_out, color:'rgb(255,0,0)'}
+        ];
+        for (const ar of arcs){ const ap=arcPts(ar.cx,ar.cy,ar.r,ar.ang); traces.push({type:'scatter', x:ap[0], y:ap[1], mode:'lines', line:{color:ar.color, width:1.5}, hoverinfo:'skip', showlegend:false}); const mid=ar.ang*Math.PI/180/2; annotations.push({x:ar.cx+ar.r*1.1*Math.cos(mid), y:ar.cy+ar.r*1.1*Math.sin(mid), text: Math.round(ar.ang)+'°', showarrow:false, font:{color:ar.color, size:10}}); }
 
         if (g.PDOF_stima != null) {
           const r = 5;
           const a = deg2rad(g.PDOF_stima);
+          // Mantiene la linea come shape e aggiunge anche una traccia per la legenda
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'magenta', width:2}});
-          annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+' deg', showarrow:false, font:{color:'magenta'}});
+          traces.push({type:'scatter', x:[-Math.cos(a)*r, Math.cos(a)*r], y:[-Math.sin(a)*r, Math.sin(a)*r], mode:'lines', line:{dash:'dash', color:'magenta', width:2}, name:'PDOF stimata'});
+          annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+'°', showarrow:false, font:{color:'magenta'}});
         }
 
-        const layout = { title: {text:'Rappresentazione vettoriale', x:0.5, y:0.95}, xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations };
-        Plotly.newPlot('vectors', traces, layout, {responsive:true});
+        // Rimuove eventuale circonferenza non richiesta (se introdotta in futuro)
+        const filtered = traces.filter(t => !(t && t.type==='scatter' && t.mode==='lines' && t.line && (t.line.color==='blue' || t.line.color==='#0000ff') && Array.isArray(t.x) && t.x.length>50 && !t.name));
+        const ann = annotations.filter(a => !(a && typeof a.text==='string' && a.text.trim().startsWith('0')));
+        const layout = { title: {text:'Rappresentazione vettoriale (1 unit\u00E0 grafica = 25 km/h)', x:0.5, y:0.95}, xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations: ann };
+        Plotly.newPlot('vectors', filtered, layout, {responsive:true});
         const vx=document.getElementById('vx'), vy=document.getElementById('vy'), vleg=document.getElementById('vleg');
         if (vx && vy && vleg){ function apply(){ const [lx,ly,lxa,lya]=legendCorner(vleg.value); Plotly.relayout('vectors', {'title.x':parseFloat(vx.value),'title.y':parseFloat(vy.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } vx.oninput=apply; vy.oninput=apply; vleg.onchange=apply; }
       }
@@ -287,11 +329,17 @@
         const v1post= vec(t.x1, t.y1, scale*t.V1_post_t, t.theta1_out_t);
         const v2pre = vec(t.x2, t.y2, scale*t.V2_pre, t.theta2_in_t);
         const v2post= vec(t.x2, t.y2, scale*t.V2_post_t, t.theta2_out_t);
+        // Delta-V vectors
+        const dv1 = { x: v1post.x - v1pre.x, y: v1post.y - v1pre.y };
+        const dv2 = { x: v2post.x - v2pre.x, y: v2post.y - v2pre.y };
         const traces = [
           arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
           arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
           arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
-          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
+          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post'),
+          // ΔV arrows from tip of pre to post
+          arrow(v1pre.x, v1pre.y, v1pre.x + dv1.x, v1pre.y + dv1.y, 'rgb(0,153,0)', 'ΔV1'),
+          arrow(v2pre.x, v2pre.y, v2pre.x + dv2.x, v2pre.y + dv2.y, 'rgb(0,153,0)', 'ΔV2')
         ];
         const shapes = [];
         const annotations = [
@@ -302,13 +350,18 @@
           {x0:t.x1, y0:t.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
           {x0:t.x1, y0:t.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
           {x0:t.x2, y0:t.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
-          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'},
+          // ΔV heads
+          {x0:v1pre.x, y0:v1pre.y, x1:v1pre.x + dv1.x, y1:v1pre.y + dv1.y, color:'rgb(0,153,0)'},
+          {x0:v2pre.x, y0:v2pre.y, x1:v2pre.x + dv2.x, y1:v2pre.y + dv2.y, color:'rgb(0,153,0)'}
         ];
         for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
         if (t.PDOF_eff != null) {
           const r = 5; const a = deg2rad(t.PDOF_eff);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'black', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: t.PDOF_eff.toFixed(1)+' deg', showarrow:false});
+          // Legend entry for PDOF effettiva
+          traces.push({type:'scatter', x:[-Math.cos(a)*r, Math.cos(a)*r], y:[-Math.sin(a)*r, Math.sin(a)*r], mode:'lines', line:{dash:'dash', color:'black', width:2}, name:'PDOF effettiva'});
         }
         const layout = { title:{text:'Chiusura triangoli', x:0.5, y:0.95}, xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations };
         Plotly.newPlot('triangoli', traces, layout, {responsive:true});
@@ -364,19 +417,49 @@
           const v1=-Math.sign(t.omega1_post||0)||0, v2=-Math.sign(t.omega2_post||0)||0; const a=acv(P1%(2*Math.PI), v1, thG2); const b=acv(P2%(2*Math.PI), v2, thG1); const card=[a,b]; let rA=ac(P1%(2*Math.PI), v1, card); let rB=ac(P2%(2*Math.PI), v2, card);
           const A=P1%(2*Math.PI), B=P2%(2*Math.PI); const Aop=(A+Math.PI)%(2*Math.PI), Bop=(B+Math.PI)%(2*Math.PI);
           const W1=Imax1, W2=Imax2; const rp1=Math.min(2, 2*(W1/Math.max(W1,W2||1e-9))); const rp2=Math.min(2, 2*(W2/Math.max(W1,W2||1e-9))); const Rmax=Math.max(rp1,rp2,r1,r2)+0.5;
-          const traces=[]; function sector(t1,t2,r){ t1=(t1+2*Math.PI)%(2*Math.PI); t2=(t2+2*Math.PI)%(2*Math.PI); const step=64; const pts=[]; function arc(f,t){ for(let i=0;i<=step;i++){ const th=f+(t-f)*i/step; pts.push({theta:toDeg(th), r}); }} if (t2<t1) {arc(t1,2*Math.PI); arc(0,t2);} else { arc(t1,t2); } pts.push({theta:pts[pts.length-1].theta, r:0}); pts.push({theta:pts[0].theta, r:0}); traces.push({type:'scatterpolar', mode:'lines', r:pts.map(p=>p.r), theta:pts.map(p=>p.theta), fill:'toself', fillcolor:'rgba(0,128,0,0.25)', line:{width:0}}); }
+          const traces=[]; function sector(t1,t2,r){ t1=(t1+2*Math.PI)%(2*Math.PI); t2=(t2+2*Math.PI)%(2*Math.PI); const step=64; const pts=[]; function arc(f,t){ for(let i=0;i<=step;i++){ const th=f+(t-f)*i/step; pts.push({theta:toDeg(th), r}); }} if (t2<t1) {arc(t1,2*Math.PI); arc(0,t2);} else { arc(t1,t2); } pts.push({theta:pts[pts.length-1].theta, r:0}); pts.push({theta:pts[0].theta, r:0}); traces.push({type:'scatterpolar', mode:'lines', r:pts.map(p=>p.r), theta:pts.map(p=>p.theta), fill:'toself', fillcolor:'rgba(0,128,0,0.25)', line:{width:0}, showlegend:false}); }
           sector(rA,A,2.5); sector((rA+Math.PI)%(2*Math.PI),(A+Math.PI)%(2*Math.PI),2.5); sector(rB,B,2.5); sector((rB+Math.PI)%(2*Math.PI),(B+Math.PI)%(2*Math.PI),2.5);
-          traces.push({type:'scatterpolar', r:[Rmax,Rmax], theta:[toDeg(Aop), toDeg(A)], mode:'lines', line:{color:'rgba(204,217,255,1)', width:2}});
-          traces.push({type:'scatterpolar', r:[Rmax,Rmax], theta:[toDeg(Bop), toDeg(B)], mode:'lines', line:{color:'rgba(255,204,204,1)', width:2}});
-          traces.push({type:'scatterpolar', r:[0,rp1], theta:[0,toDeg(A)], mode:'lines', line:{color:'blue', width:2}});
-          traces.push({type:'scatterpolar', r:[0,rp2], theta:[0,toDeg(B)], mode:'lines', line:{color:'red', width:2}});
-          let target=null; if (!useEff && targets && targets.PDOF && Array.isArray(targets.PDOF)) target = targets.PDOF[0]; if (useEff && t.PDOF_eff != null) target = t.PDOF_eff; if (target!=null){ const opp=(target+180)%360; traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,target], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); }
-          if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); }
+          traces.push({type:'scatterpolar', r:[Rmax,Rmax], theta:[toDeg(Aop), toDeg(A)], mode:'lines', line:{color:'rgba(204,217,255,1)', width:2}, showlegend:false});
+          traces.push({type:'scatterpolar', r:[Rmax,Rmax], theta:[toDeg(Bop), toDeg(B)], mode:'lines', line:{color:'rgba(255,204,204,1)', width:2}, showlegend:false});
+          function norm(d){ d=((d%360)+360)%360; return d; }
+          function pair(deg){ return `${norm(deg).toFixed(1)}\u00B0 / ${norm(deg+180).toFixed(1)}\u00B0`; }
+          const dA = pair(toDeg(A)); const dB = pair(toDeg(B));
+          traces.push({type:'scatterpolar', r:[0,rp1], theta:[0,toDeg(A)], mode:'lines', line:{color:'blue', width:2}, name:`PDOF veicolo 1 (${dA})`});
+          traces.push({type:'scatterpolar', r:[0,rp2], theta:[0,toDeg(B)], mode:'lines', line:{color:'red', width:2}, name:`PDOF veicolo 2 (${dB})`});
+          let target=null; if (!useEff && targets && targets.PDOF && Array.isArray(targets.PDOF)) target = targets.PDOF[0]; if (useEff && t.PDOF_eff != null) target = t.PDOF_eff; if (target!=null){ const opp=(target+180)%360; traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,target], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, name:`PDOF target (${pair(target)})`}); traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, showlegend:false}); }
+          if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, name:`PDOF stimata (${pair(s)})`}); traces.push({type:'scatterpolar', r:[0,Rmax], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, showlegend:false}); }
           traces.push({type:'scatterpolar', mode:'markers+text', r:[r1], theta:[toDeg(thG1)], marker:{color:'blue', size:8}, text:['G1'], textposition:'top center', showlegend:false});
           traces.push({type:'scatterpolar', mode:'markers+text', r:[r2], theta:[toDeg(thG2)], marker:{color:'red', size:8}, text:['G2'], textposition:'top center', showlegend:false});
           const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Cono di validità PDOF', showarrow:false, font:{size:16}};
           const layout = { polar:{ radialaxis:{visible:true, range:[0,Rmax]} }, margin:{t:60,l:10,r:10,b:10}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, annotations:[titleAnn] };
           Plotly.newPlot(containerId, traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
+          // Migliora aspetto: aggiunge etichette gradi e legenda in basso
+          (function(){
+            const rA = Rmax*1.08;
+            function fmt(d){ d=((d%360)+360)%360; return d.toFixed(1)+'\u00B0'; }
+            function t(thetaDeg, color){ traces.push({type:'scatterpolar', mode:'text', r:[rA], theta:[thetaDeg], text:[fmt(thetaDeg)], textfont:{color, size:12}, showlegend:false, hoverinfo:'skip', cliponaxis:false}); }
+            t(toDeg(A), 'blue'); t(toDeg(B), 'red');
+            if (target!=null) { t(target, 'black'); t((target+180)%360, 'black'); }
+            if (!useEff && t.PDOF_stima!=null) { t(t.PDOF_stima, 'magenta'); t((t.PDOF_stima+180)%360, 'magenta'); }
+            t((toDeg(A)+180)%360, 'blue'); t((toDeg(B)+180)%360, 'red');
+            const layout2 = { polar:{ radialaxis:{visible:true, range:[0,Rmax*1.08]} }, margin:{t:60,l:10,r:10,b:50}, showlegend:true, legend:{orientation:'h', x:0.5, y:-0.12, xanchor:'center', yanchor:'top'}, annotations:[{xref:'paper', yref:'paper', x:0.5, y:0.95, text:'Cono di validit\u00E0 della PDOF', showarrow:false, font:{size:16}}] };
+            try { Plotly.react(containerId, traces, layout2, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}}); } catch(e) {}
+            // Slider Zoom
+            try { const z=document.getElementById('pdofZoom'); if (z){ const base=Rmax*1.08; const apply=()=>{ const f=parseFloat(z.value)||1; Plotly.relayout(containerId, {'polar.radialaxis.range':[0, base*f]}); }; z.addEventListener('input', apply); apply(); } } catch(e) {}
+            // Make angle labels draggable as annotations positioned outside plot
+            (function(){
+              const gd = document.getElementById(containerId);
+              const ann = (gd.layout.annotations||[]).slice();
+              function add(txt,color,x,y){ ann.push({xref:'paper', yref:'paper', x, y, text:txt, showarrow:false, font:{color, size:12}}); }
+              function fmt(d){ d=((d%360)+360)%360; return d.toFixed(1)+'\u00B0'; }
+              const rightX=1.08, leftX=-0.08; let yR=0.82, step=0.06;
+              add(fmt(toDeg(A)), 'blue', rightX, yR); yR-=step; add(fmt(toDeg(B)), 'red', rightX, yR); yR-=step;
+              if (target!=null){ add(fmt(target), 'black', rightX, yR); yR-=step; }
+              if (!useEff && t.PDOF_stima!=null){ add(fmt(t.PDOF_stima), 'magenta', rightX, yR); yR-=step; }
+              let yL=0.18; add(fmt((toDeg(A)+180)%360),'blue', leftX, yL); yL+=step; add(fmt((toDeg(B)+180)%360),'red', leftX, yL); yL+=step; if (target!=null){ add(fmt((target+180)%360),'black', leftX, yL); yL+=step; } if (!useEff && t.PDOF_stima!=null){ add(fmt((t.PDOF_stima+180)%360),'magenta', leftX, yL); }
+              try { Plotly.relayout(containerId, {annotations: ann}); } catch(e) {}
+            })();
+          })();
         }
         draw('pdof', false);
       }

@@ -1,5 +1,5 @@
 # ---- PARAMETRI DI CONTROLLO DEL MODELLO -----
-N = 200000
+N = 50000
 gdl = 2
 # variabili booleane:
 cicloide = 1
@@ -7,7 +7,7 @@ cicloide = 1
 cicloide_avanzata = 0
 cicloide_nota = 0
 energia_EES = 0
-stima_PDOF = 0
+stima_PDOF = 1
 # per risultati migliori conviene attivare chiusura_triangoli insieme con stima_PDOF
 chiusura_triangoli = 0
 
@@ -75,7 +75,7 @@ Ed_target = 124202.148148148
 
 
 # ----- ANGOLI DI INGRESSO E USCITA URTO ------
-theta1_in = 0, 4
+theta1_in = -20, -1
 theta1_out = 329, 333
 theta2_in = 160, 175
 theta2_out = 103, 107

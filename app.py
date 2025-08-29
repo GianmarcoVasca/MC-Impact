@@ -63,6 +63,107 @@ UNITS: dict[str, str] = {
 }
 
 
+def _format_used_params(params: dict | None, targets: dict | None):
+    """Merge params and targets and format values for display.
+
+    - If a value is a 2-tuple/list with equal endpoints, show only the first.
+    - For specific flag keys, show 'attivo' for 1 and 'disattivo' for 0
+    - Ignore keys not relevant to summary.
+    """
+    params = params or {}
+    targets = targets or {}
+
+    ignore_keys = {"max_iter", "passo", "soglia_salto"}
+    flag_keys = {
+        "cicloide", "cicloide_avanzata", "cicloide_nota",
+        "energia_EES", "stima_PDOF", "chiusura_triangoli",
+    }
+
+    merged: dict[str, object] = {}
+    # Prefer values from params when duplicated
+    for src in (params, targets):
+        for k, v in src.items():
+            if k in ignore_keys:
+                continue
+            merged.setdefault(str(k), v)
+
+    def fmt_value(k: str, v: object) -> str:
+        # Normalize tuples/lists
+        if isinstance(v, (list, tuple)) and len(v) >= 2:
+            a, b = v[0], v[1]
+            try:
+                equal = (a == b)
+            except Exception:
+                equal = False
+            v0 = a
+            if k in flag_keys:
+                try:
+                    flag = int(a)
+                except Exception:
+                    flag = 0
+                return "attivo" if flag == 1 else "disattivo"
+            if equal:
+                return str(v0)
+            return f"({a}, {b})"
+        # Single value
+        if k in flag_keys:
+            try:
+                flag = int(v)
+            except Exception:
+                flag = 0
+            return "attivo" if flag == 1 else "disattivo"
+        return str(v)
+
+    formatted = {k: fmt_value(k, v) for k, v in merged.items()}
+    # Keep deterministic ordering (alphabetical)
+    return dict(sorted(formatted.items(), key=lambda kv: kv[0].lower()))
+
+
+def _group_used_params(formatted: dict[str, str]):
+    """Return a list of (section, OrderedDict) preserving a manual-like order."""
+    from collections import OrderedDict
+
+    GROUPS: list[tuple[str, list[str]]] = [
+        ("Simulazione", ["N", "gdl"]),
+        ("Flag", [
+            "cicloide", "cicloide_avanzata", "cicloide_nota",
+            "energia_EES", "stima_PDOF", "chiusura_triangoli",
+        ]),
+        ("Post-urto (cicloide)", [
+            "d_post1", "d_post2", "theta_post1", "theta_post2", "f1", "f2"
+        ]),
+        ("Post-urto avanzato", [
+            "x1_quiete", "y1_quiete", "x2_quiete", "y2_quiete"
+        ]),
+        ("Post-urto (no-cicloide)", [
+            "V1_post_Kmh", "V2_post_Kmh", "omega1_post", "omega2_post"
+        ]),
+        ("Cicloide nota", [
+            "lunghezza_cicloide_1", "lunghezza_cicloide_2"
+        ]),
+        ("Energia EES", ["EES1_Kmh", "EES2_Kmh"]),
+        ("Coordinate baricentriche", ["x1", "y1", "x2", "y2"]),
+        ("Targets fissi", ["PDOF", "omega1_pre", "omega2_pre"]),
+    ]
+
+    used = set()
+    out: list[tuple[str, OrderedDict[str, str]]] = []
+    for title, keys in GROUPS:
+        section = OrderedDict()
+        for k in keys:
+            if k in formatted:
+                section[k] = formatted[k]
+                used.add(k)
+        if section:
+            out.append((title, section))
+
+    # Remaining keys go into "Altri"
+    remaining = OrderedDict((k, v) for k, v in formatted.items() if k not in used)
+    if remaining:
+        out.append(("Altri", remaining))
+    return out
+
+
 def run_simulation(dati_path: str, targets_path: str, override_N: int | None = None, progress_key: str | None = None):
     """Run the same Monte Carlo flow as main.py but without plots or prompts.
 
@@ -390,6 +491,29 @@ def run():
         if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]
     ]
 
+    used_params = _format_used_params(to_jsonable(parametri), to_jsonable(targets))
+    # Evita duplicati: escludi variabili già mostrate in "Migliore combinazione"
+    try:
+        used_params = {k: v for k, v in used_params.items() if k not in best}
+    except Exception:
+        pass
+    used_params_grouped = _group_used_params(used_params)
+
+    def _is_active(d: dict, key: str) -> bool:
+        v = d.get(key)
+        if isinstance(v, (list, tuple)) and v:
+            v = v[0]
+        try:
+            return int(v) == 1
+        except Exception:
+            return False
+
+    flags = {
+        'chiusura_triangoli': _is_active(parametri, 'chiusura_triangoli'),
+        'cicloide_avanzata': _is_active(parametri, 'cicloide_avanzata'),
+        'stima_PDOF': _is_active(parametri, 'stima_PDOF'),
+    }
+
     return render_template(
         "results.html",
         best=best,
@@ -401,6 +525,9 @@ def run():
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
         units=UNITS,
         expandable_vars=expandable_vars,
+        used_params=used_params,
+        used_params_grouped=used_params_grouped,
+        flags=flags,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
@@ -659,6 +786,29 @@ def result(run_id):
         if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]
     ]
 
+    used_params = _format_used_params(meta.get("parametri", {}), meta.get("targets", {}))
+    # Evita duplicati rispetto a "Migliore combinazione"
+    try:
+        used_params = {k: v for k, v in used_params.items() if k not in best}
+    except Exception:
+        pass
+    used_params_grouped = _group_used_params(used_params)
+
+    def _is_active_meta(d: dict, key: str) -> bool:
+        v = d.get(key)
+        if isinstance(v, (list, tuple)) and v:
+            v = v[0]
+        try:
+            return int(v) == 1
+        except Exception:
+            return False
+
+    flags = {
+        'chiusura_triangoli': _is_active_meta(params, 'chiusura_triangoli'),
+        'cicloide_avanzata': _is_active_meta(params, 'cicloide_avanzata'),
+        'stima_PDOF': _is_active_meta(params, 'stima_PDOF'),
+    }
+
     return render_template(
         "results.html",
         best=best,
@@ -670,6 +820,9 @@ def result(run_id):
         graph_inputs=json.dumps(to_jsonable(graph_inputs)),
         units=UNITS,
         expandable_vars=expandable_vars,
+        used_params=used_params,
+        used_params_grouped=used_params_grouped,
+        flags=flags,
         files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
                          "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
     )
