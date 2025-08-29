@@ -8,30 +8,26 @@
     <title>MC-Impact - Risultati</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
-      :root { --brand-bg:#f6f8fb; --brand-text:#000000; --brand-accent:#2c7be5; }
-      body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: url('{{ url_for('bg_image') }}') center/cover fixed no-repeat; color: #000 !important; }
+      :root { --brand-bg:#fefefe; --brand-text:#000000; --brand-accent:#2c7be5; }
+      body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: var(--brand-bg); color: #000 !important; }
       .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
       .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin-left:auto; margin-right:auto; }
       table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
       th, td { border-bottom: 1px solid #eee; padding: 0.4rem; text-align: left; }
       .kv { display: grid; grid-template-columns: 240px auto 80px; gap: .25rem .5rem; align-items: baseline; }
       .btn { background: var(--brand-accent); color:#fff; padding:.5rem .8rem; border-radius:6px; text-decoration:none; display:inline-block; }
-      /* Stile per i link "schermo intero" nelle intestazioni grafici */
       h2 small a { background: var(--brand-accent); color:#fff; padding:.3rem .6rem; border-radius:6px; text-decoration:none; }
       .actions a { margin-right: .75rem; }
       .muted { color: #555; }
-      /* Esplora: font e spaziatura uniformati al resto della pagina */
       #explora .row { margin-bottom: 0.9rem; }
       #explora label { font-size: 1rem; }
       #explora .muted { font-size: 1rem; }
       #explora input, #explora select { font-size: 1rem; }
       a { color: var(--brand-accent); }
       .brand { display:flex; justify-content:center; align-items:center; gap:16px; margin: .5rem 0 1rem; }
-      /* Loghi unificati: cars dimensione standard, scritta metÃ  */
       .brand img { width:auto; display:block; }
       .brand img:last-child { max-height: 140px; }
       #brandLogo { max-height: 70px; }
-      /* Barra avanzamento esplora */
       .progress { background:#f1f3f5; border-radius:6px; height:10px; overflow:hidden; display:none; }
       .progress .bar { background:linear-gradient(90deg, #2c7be5, #66a6ff); height:100%; width:0%; transition: width .25s ease; }
       .progress-info { display:none; font-size:.9rem; margin-top:.35rem; color:#333; }
@@ -72,7 +68,7 @@
       </div>
     </div>
 
-    {% if flags and flags.stima_PDOF %}
+    <!-- Opzioni sempre visibile -->
     <div class="card" style="margin-top:1rem;">
       <h2>Opzioni</h2>
       <div class="actions" style="display:flex; flex-direction:column; gap:.5rem; align-items:flex-start;">
@@ -86,6 +82,7 @@
       </div>
     </div>
 
+    <!-- Grafico MonteCarlo interattivo sempre visibile -->
     <div class="card" style="margin-top:1rem;">
       <h2>Grafico MonteCarlo interattivo <small><a class="btn" href="{{ url_for('plot_full', kind='scatter', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
       <div class="row">
@@ -107,8 +104,9 @@
         </select>
       </div>
       <div id="scatter" style="height:480px;"></div>
-  </div>
+    </div>
 
+    <!-- Diagramma vettoriale sempre visibile -->
     <div class="card" style="margin-top:1rem;">
       <h2>Diagramma vettoriale <small><a class="btn" href="{{ url_for('plot_full', kind='vectors', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
       <div id="ctrl-vectors" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
@@ -126,18 +124,8 @@
         </label>
       </div>
       <div id="vectors" style="height:560px;"></div>
-  </div>
+    </div>
 
-  <script>
-    (function(){
-      const img=document.getElementById('brandLogo'); if(!img) return;
-      const set=(bg,txt,acc)=>{ const r=document.documentElement.style; r.setProperty('--brand-bg',bg); r.setProperty('--brand-text',txt); r.setProperty('--brand-accent',acc); };
-      const rgb=(r,g,b)=>'#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
-      const lum=(r,g,b)=>{ r/=255; g/=255; b/=255; const a=[r,g,b].map(v=>v<=0.03928? v/12.92: Math.pow((v+0.055)/1.055,2.4)); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
-      function pick(){ try{ const c=document.createElement('canvas'); const s=32; c.width=s; c.height=s; const x=c.getContext('2d'); x.drawImage(img,0,0,s,s); const d=x.getImageData(0,0,s,s).data; let r=0,g=0,b=0,n=0; for(let i=0;i<d.length;i+=4){ if(d[i+3]<10) continue; r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++; } if(!n) return null; r/=n; g/=n; b/=n; const L=lum(r,g,b); const bg=rgb(r,g,b); const txt=L>0.6? '#111' : '#f9fbfd'; const acc=(function(){ const max=Math.max(r,g,b), min=Math.min(r,g,b); let h=0; const d=max-min; if(d){ if(max===r) h=((g-b)/d)%6; else if(max===g) h=(b-r)/d+2; else h=(r-g)/d+4; h=(h*60+30)%360; } const s=0.65, l=0.46; function hsl2rgb(h,s,l){ h/=360; const hue2rgb=(p,q,t)=>{ if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; }; const q=l<0.5? l*(1+s): l+s-l*s; const p=2*l-q; const r=hue2rgb(p,q,h+1/3), g=hue2rgb(p,q,h), b=hue2rgb(p,q,h-1/3); return [r*255,g*255,b*255]; } const [rr,gg,bb]=hsl2rgb(h,s,l); return rgb(rr,gg,bb);} )(); return {bg, txt, acc}; }catch(e){ return null; } }
-      if (img.complete){ const c=pick(); if(c) set(c.bg,c.txt,c.acc); } else img.addEventListener('load', ()=>{ const c=pick(); if(c) set(c.bg,c.txt,c.acc); });
-    })();
-  </script>
     {% if flags and flags.chiusura_triangoli %}
     <div class="card" style="margin-top:1rem;">
       <h2>Chiusura triangoli <small><a class="btn" href="{{ url_for('plot_full', kind='triangoli', run_id=run_id) }}" target="_blank">Apri a schermo intero</a></small></h2>
@@ -180,10 +168,13 @@
     </div>
     {% endif %}
 
+    {% if flags and flags.stima_PDOF %}
     <div class="card" style="margin-top:1rem;">
       <h2>Cono di validità PDOF <small>
-        <a href="{{ url_for('plot_full', kind='pdof', run_id=run_id) }}" target="_blank">Stima (schermo intero)</a> -
-        <a href="{{ url_for('plot_full', kind='pdof_tri', run_id=run_id) }}" target="_blank">Effettiva (schermo intero)</a>
+        <a href="{{ url_for('plot_full', kind='pdof', run_id=run_id) }}" target="_blank">Stima (schermo intero)</a>
+        {% if flags.chiusura_triangoli %}
+        - <a class="btn" href="{{ url_for('plot_full', kind='pdof_tri', run_id=run_id) }}" target="_blank">Effettiva (schermo intero)</a>
+        {% endif %}
       </small></h2>
       <div id="ctrl-pdof" class="muted" style="display:flex; gap:.5rem; align-items:center; margin:.25rem 0 .5rem 0;">
         <label>Zoom <input id="pdofZoom" type="range" min="0.5" max="2.0" step="0.01" value="1.00" style="width:180px;"></label>
@@ -390,7 +381,7 @@
         }
         const layout = { title:{text:'Cicloidi post-urto', x:0.5, y:0.95}, xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'} };
         Plotly.newPlot('cicloidi', traces, layout, {responsive:true});
-        const cx=document.getElementById('cx'), cy=document.getElementById('cy'), cleg=document.getElementById('cleg');
+        const cx=document.getElementById('cx'), cy=document.getElementById('cleg');
         if (cx && cy && cleg){ function applyC(){ const [lx,ly,lxa,lya]=legendCorner(cleg.value); Plotly.relayout('cicloidi', {'title.x':parseFloat(cx.value),'title.y':parseFloat(cy.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } cx.oninput=applyC; cy.oninput=applyC; cleg.onchange=applyC; }
       }
       drawCicloidi();
@@ -484,7 +475,7 @@
         if (prog && bar && pinf){ prog.style.display='block'; pinf.style.display='block'; bar.style.width='0%'; }
         if (log){ log.style.display='block'; log.textContent=''; }
         let stopPoll=false; const seenIters=new Set();
-        (async function poll(){ if(stopPoll) return; try{ const r=await fetch(`/api/esplora_progress/${runId}`); if(r.ok){ const s=await r.json(); const cur=Math.max(0,parseInt(s.current||0)); const tot=Math.max(1,parseInt(s.total||it)); const pct=Math.min(100,Math.round(cur*100/tot)); if(bar) bar.style.width=pct+'%'; if(pinf) pinf.textContent=`${pct}% - ${cur}/${tot}`+(s.done?' - completato':''); if (s.last && s.last.iter && !seenIters.has(s.last.iter)) { seenIters.add(s.last.iter); const L=s.last; const media=(L.media_output!=null && !Number.isNaN(L.media_output))? L.media_output.toFixed(3):'NaN'; const std=(L.deviazione_std!=null && !Number.isNaN(L.deviazione_std))? L.deviazione_std.toFixed(3):'NaN'; const low=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output-3*L.deviazione_std):NaN; const high=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output+3*L.deviazione_std):NaN; const bracket=(Number.isFinite(low)&&Number.isFinite(high))? ` [${low.toFixed(3)}, ${high.toFixed(3)}]`:''; if(log) { const n = (typeof L.campioni_validi==='number')? L.campioni_validi : undefined; const nS = (n!=null)? ` | n=${n}`:''; log.textContent+=`Iter ${L.iter.toString().padStart(2,' ')} | std=${std} | ${m}: ${media} +/- ${(Number.isFinite(L.deviazione_std)?(3*L.deviazione_std).toFixed(3):'NaN')}${bracket}${nS}\n`; log.scrollTop=log.scrollHeight; } } } }catch(e){} if(!stopPoll) setTimeout(poll,500); })();
+        (async function poll(){ if(stopPoll) return; try{ const r=await fetch(`/api/esplora_progress/${runId}`); if(r.ok){ const s=await r.json(); const cur=Math.max(0,parseInt(s.current||0)); const tot=Math.max(1,parseInt(s.total||it)); const pct=Math.min(100,Math.round(cur*100/tot)); if(bar) bar.style.width=pct+'%'; if(pinf) pinf.textContent=`${pct}% - ${cur}/${tot}`+(s.done?' - completato':''); if (s.last && s.last.iter && !seenIters.has(s.last.iter)) { seenIters.add(s.last.iter); const L=s.last; const media=(L.media_output!=null && !Number.isNaN(L.media_output))? L.media_output.toFixed(3):'NaN'; const std=(L.deviazione_std!=null && !Number.isNaN(L.deviazione_std))? L.deviazione_std.toFixed(3):'NaN'; const low=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output-3*L.deviazione_std):NaN; const high=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output+3*L.deviazione_std):NaN; const bracket=(Number.isFinite(low)&&Number.isFinite(high))? ` [${low.toFixed(3)}, ${high.toFixed(3)}]`:''; if(log) { const n = (typeof L.campioni_validi==='number')? L.campioni_validi : undefined; const nS = (n!=null)? ` | n=${n}`:''; log.textContent+=`Iter ${L.iter.toString().padStart(2,' ')} | std=${std} | ${m}: ${media} +/- ${(Number.isNaN(L.deviazione_std)?'NaN':(3*L.deviazione_std).toFixed(3))}${bracket}${nS}\n`; log.scrollTop=log.scrollHeight; } } } } catch(e){} if(!stopPoll) setTimeout(poll,500); })();
       // Termina handler
       btnTermina.addEventListener("click", async ()=>{
         try {
@@ -508,7 +499,7 @@
     </script>
   </body>
   </html>
- 
+
 
 
 

@@ -205,8 +205,13 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
             now = time.time()
             done = i + 1
             elapsed = max(0.0, now - start_ts)
-            rate = done / elapsed if elapsed > 0 else 0
-            remaining = (N - done) / rate if rate > 0 else None
+            if done > 0 and elapsed > 2.0:  # ignora stima nei primi 2 secondi
+                rate = done / elapsed
+                remaining = (N - done) / rate if rate > 0 else None
+            else:
+                remaining = None
+            if done >= N:
+                remaining = 0
             PROGRESS[progress_key] = {
                 "current": done,
                 "total": N,

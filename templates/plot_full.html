@@ -8,8 +8,8 @@
     <title>MC-Impact • Plot</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
-      :root { --brand-bg:#f6f8fb; --brand-text:#1a1d21; --brand-accent:#2c7be5; }
-      html, body { height: 100%; margin: 0; background: url('{{ url_for('bg_image') }}') center/cover fixed no-repeat; color: var(--brand-text); }
+      :root { --brand-bg:#fefefe; --brand-text:#1a1d21; --brand-accent:#2c7be5; }
+      html, body { height: 100%; margin: 0; background: var(--brand-bg); color: var(--brand-text); }
       /* Forza testi neri su tutte le pagine plot */
       body { color:#000 !important; }
       header, #plot { color:#000 !important; }
@@ -42,15 +42,7 @@
     </div>
 
     <script>
-      // Theme from logo
-      (function(){
-        const img=document.getElementById('brandLogo'); if(!img) return;
-        const set=(bg,txt,acc)=>{ const r=document.documentElement.style; r.setProperty('--brand-bg',bg); r.setProperty('--brand-text',txt); r.setProperty('--brand-accent',acc); };
-        const rgb=(r,g,b)=>'#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
-        const lum=(r,g,b)=>{ r/=255; g/=255; b/=255; const a=[r,g,b].map(v=>v<=0.03928? v/12.92: Math.pow((v+0.055)/1.055,2.4)); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
-        function pick(){ try{ const c=document.createElement('canvas'); const s=32; c.width=s; c.height=s; const x=c.getContext('2d'); x.drawImage(img,0,0,s,s); const d=x.getImageData(0,0,s,s).data; let r=0,g=0,b=0,n=0; for(let i=0;i<d.length;i+=4){ if(d[i+3]<10) continue; r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++; } if(!n) return null; r/=n; g/=n; b/=n; const L=lum(r,g,b); const bg=rgb(r,g,b); const txt=L>0.6? '#111' : '#f9fbfd'; const acc=(function(){ const max=Math.max(r,g,b), min=Math.min(r,g,b); let h=0; const d=max-min; if(d){ if(max===r) h=((g-b)/d)%6; else if(max===g) h=(b-r)/d+2; else h=(r-g)/d+4; h=(h*60+30)%360; } const s=0.65, l=0.46; function hsl2rgb(h,s,l){ h/=360; const hue2rgb=(p,q,t)=>{ if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; }; const q=l<0.5? l*(1+s): l+s-l*s; const p=2*l-q; const r=hue2rgb(p,q,h+1/3), g=hue2rgb(p,q,h), b=hue2rgb(p,q,h-1/3); return [r*255,g*255,b*255]; } const [rr,gg,bb]=hsl2rgb(h,s,l); return rgb(rr,gg,bb);} )(); return {bg, txt, acc}; }catch(e){ return null; } }
-        if (img.complete){ const c=pick(); if(c) set(c.bg,c.txt,c.acc); } else img.addEventListener('load', ()=>{ const c=pick(); if(c) set(c.bg,c.txt,c.acc); });
-      })();
+      // RIMOSSO: Theme from logo (campionamento automatico)
       const kind = {{ kind|tojson }};
       const runId = {{ run_id|tojson }};
       // Imposta titolo pagina e separatore header
@@ -358,11 +350,76 @@
         traces.push({type:'scatterpolar', r:[0, r2_plot], theta:[0, toDeg(a2)], mode:'lines', line:{color:'red', width:2}, name:`PDOF veicolo 2 (${pairLabel(deg2)})`});
 
         // Target, stima ed effettiva (ognuna con angolo e opposto)
-        let targetDeg = null; if (targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
+        let targetDeg = null; 
+        if (targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
         const effDeg = (useEff && t.PDOF_eff != null) ? t.PDOF_eff : null;
-        if (targetDeg != null){ const opp = (targetDeg+180)%360; const name=`PDOF target (${pairLabel(targetDeg)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,targetDeg], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, showlegend:false}); }
-        if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; const name=`PDOF stimata (${pairLabel(s)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, showlegend:false}); }
-        if (effDeg != null){ const opp=(effDeg+180)%360; const name=`PDOF effettiva (${pairLabel(effDeg)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,effDeg], mode:'lines', line:{dash:'dash', color:'darkorange', width:1.8}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'darkorange', width:1.8}, showlegend:false}); }
+
+        // Mostra la PDOF target (nera tratteggiata) solo se NON siamo in modalità effettiva
+        if (!useEff && targetDeg != null){ 
+          const opp = (targetDeg+180)%360; 
+          const name=`PDOF target (${pairLabel(targetDeg)})`; 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,targetDeg], 
+            mode:'lines', 
+            line:{dash:'dash', color:'black', width:1.5}, 
+            name
+          }); 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,opp], 
+            mode:'lines', 
+            line:{dash:'dash', color:'black', width:1.5}, 
+            showlegend:false
+          }); 
+        }
+
+        // Mostra la PDOF stimata (magenta tratteggiata) solo se NON siamo in modalità effettiva
+        if (!useEff && t.PDOF_stima != null){ 
+          const s = t.PDOF_stima; 
+          const opp = (s+180)%360; 
+          const name = `PDOF stimata (${pairLabel(s)})`; 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,s], 
+            mode:'lines', 
+            line:{dash:'dash', color:'magenta', width:1.5}, 
+            name
+          }); 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,opp], 
+            mode:'lines', 
+            line:{dash:'dash', color:'magenta', width:1.5}, 
+            showlegend:false
+          }); 
+        }
+
+        // Mostra la PDOF effettiva (nera, continua, spessa) solo in modalità effettiva
+        if (effDeg != null){ 
+          const opp = (effDeg+180)%360; 
+          const name = `PDOF effettiva (${pairLabel(effDeg)})`; 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,effDeg], 
+            mode:'lines', 
+            line:{color:'black', width:2.2}, // nero, continua, spessa
+            name
+          }); 
+          traces.push({
+            type:'scatterpolar', 
+            r:[0,r_max], 
+            theta:[0,opp], 
+            mode:'lines', 
+            line:{color:'black', width:2.2}, 
+            showlegend:false
+          }); 
+        }
 
         // G1, G2 markers
         traces.push({type:'scatterpolar', mode:'markers+text', r:[r1], theta:[toDeg(thG1)], marker:{color:'blue', size:8}, text:['G1'], textposition:'top center', showlegend:false});

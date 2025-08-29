@@ -7,8 +7,13 @@
     <link rel="shortcut icon" type="image/jpeg" href="{{ url_for('favicon_jpg') }}" />
     <title>MC-Impact-Home</title>
     <style>
-      :root { --brand-bg:#f6f8fb; --brand-text:#1a1d21; --brand-accent:#2c7be5; }
-      body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: url('{{ url_for('bg_image') }}') center/cover fixed no-repeat; color: var(--brand-text); }
+      :root { --brand-bg:#fefefe; --brand-text:#1a1d21; --brand-accent:#2c7be5; }
+      body { 
+        font-family: system-ui, Arial, sans-serif; 
+        margin: 2rem; 
+        background: var(--brand-bg); /* Sfondo fisso */
+        color: var(--brand-text);
+      }
       .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin: 0 auto; }
       h1 { text-align:center; }
       .row { margin-bottom: 0.75rem; }
@@ -411,7 +416,17 @@
             if (!r.ok) return; const p = await r.json();
             const cur = p.current||0, tot=p.total||0; const pct = tot>0 ? Math.min(100, Math.floor(cur*100/tot)) : (p.done?100:0);
             bar.style.width = pct + '%'; etaText.textContent = fmtEta(p.eta_seconds);
-            if (p.done){ clearInterval(window._mcPoll); document.getElementById('btnCancel').style.display='none'; window.currentRunId=null; if (p.error){ alert('Errore: '+p.error); btn.disabled=false; return; } window.location.href = `/result/${runId}`; }
+            if (p.done){
+              clearInterval(window._mcPoll);
+              document.getElementById('btnCancel').style.display='none';
+              window.currentRunId=null;
+              if (p.error){
+                alert('Errore: '+p.error); btn.disabled=false; return;
+              }
+              // Apri la pagina dei risultati in una nuova scheda SENZA ricaricare la home
+              window.open(`/result/${runId}`, '_blank');
+              btn.disabled = false;
+            }
           }, 500);
         } catch(err){ alert('Errore: '+err); btn.disabled=false; }
       });
