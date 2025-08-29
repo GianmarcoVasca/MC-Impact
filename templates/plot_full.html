@@ -53,12 +53,31 @@
       })();
       const kind = {{ kind|tojson }};
       const runId = {{ run_id|tojson }};
+      // Imposta titolo pagina e separatore header
+      try { document.title = 'MC-Impact-Plot'; const sep = document.querySelector('header span'); if (sep) sep.textContent='-'; } catch(e) {}
 
       function el(tag, attrs={}, children=[]) {
         const e = document.createElement(tag);
         Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k,v));
         children.forEach(c => e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c));
         return e;
+      }
+      function addZoomCtrl(){
+        const ctrls = document.getElementById('controls');
+        if (!ctrls) return;
+        ctrls.innerHTML = '';
+        // Title position sliders
+        const labX = el('label', {}, ['Titolo X ']);
+        const inX = el('input', { id:'titleX', type:'range', min:'0', max:'1', step:'0.01', value:'0.50', style:'width:140px;' });
+        labX.appendChild(inX);
+        const labY = el('label', {}, ['Y ']);
+        const inY = el('input', { id:'titleY', type:'range', min:'0', max:'1', step:'0.01', value:'0.95', style:'width:140px;' });
+        labY.appendChild(inY);
+        // Zoom slider
+        const labZ = el('label', {}, [ 'Zoom ' ]);
+        const inZ = el('input', { id:'zoom', type:'range', min:'0.5', max:'2.0', step:'0.01', value:'1.00', style:'width:180px;' });
+        labZ.appendChild(inZ);
+        ctrls.appendChild(labX); ctrls.appendChild(labY); ctrls.appendChild(document.createTextNode(' | ')); ctrls.appendChild(labZ);
       }
 
       function deg2rad(d){ return d * Math.PI / 180; }
@@ -143,15 +162,38 @@
           {x0:g.x2, y0:g.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
         ];
         for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
+        // Punto origine
+        traces.push({type:'scatter', x:[0], y:[0], mode:'markers', marker:{color:'black', size:6}, showlegend:false});
+        // Cerchio guida attorno a G1 (raggio = |V1_post| in scala)
+        const rG1 = Math.hypot(v1post.x-g.x1, v1post.y-g.y1);
+        { const xs=[],ys=[]; const n=64; for(let i=0;i<=n;i++){ const a=2*Math.PI*i/n; xs.push(g.x1 + rG1*Math.cos(a)); ys.push(g.y1 + rG1*Math.sin(a)); } traces.push({type:'scatter', x:xs, y:ys, mode:'lines', line:{color:'blue', width:1}, hoverinfo:'skip', showlegend:false}); }
+        annotations.push({x:g.x1+rG1, y:g.y1, text:'0°', showarrow:false, font:{color:'rgb(102,179,255)', size:10}});
+        // Archi degli angoli
+        function arcPts(cx,cy,r,deg){ const a1=deg*Math.PI/180; const n=Math.max(6,Math.round(Math.abs(deg)/6)); const xs=[],ys=[]; for(let i=0;i<=n;i++){ const t=i/n; const a=t*a1; xs.push(cx + r*Math.cos(a)); ys.push(cy + r*Math.sin(a)); } return [xs,ys]; }
+        const arcs=[
+          {cx:g.x1, cy:g.y1, r:0.5, ang:g.theta1_in,  color:'rgb(102,179,255)'},
+          {cx:g.x1, cy:g.y1, r:0.7, ang:g.theta1_out, color:'rgb(0,0,255)'},
+          {cx:g.x2, cy:g.y2, r:0.5, ang:g.theta2_in,  color:'rgb(255,128,128)'},
+          {cx:g.x2, cy:g.y2, r:0.7, ang:g.theta2_out, color:'rgb(255,0,0)'}
+        ];
+        for (const ar of arcs){ const ap=arcPts(ar.cx,ar.cy,ar.r,ar.ang); traces.push({type:'scatter', x:ap[0], y:ap[1], mode:'lines', line:{color:ar.color, width:1.5}, hoverinfo:'skip', showlegend:false}); const mid=ar.ang*Math.PI/180/2; annotations.push({x:ar.cx+ar.r*1.1*Math.cos(mid), y:ar.cy+ar.r*1.1*Math.sin(mid), text: Math.round(ar.ang)+'°', showarrow:false, font:{color:ar.color, size:10}}); }
         if (g.PDOF_stima != null) {
           const r = 5; const a = deg2rad(g.PDOF_stima);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'magenta', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: g.PDOF_stima.toFixed(1)+'°', showarrow:false, font:{color:'magenta'}});
         }
-        const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Rappresentazione vettoriale', showarrow:false, font:{size:16}};
+        const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Rappresentazione vettoriale (1 unit\u00E0 grafica = 25 km/h)', showarrow:false, font:{size:16}};
         annotations.push(titleAnn);
-        const layout = { xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations, margin:{t:60,l:60,r:10,b:60} };
-        Plotly.newPlot('plot', traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
+        // Aggiunge una traccia in legenda per la PDOF stimata (linea magenta tratteggiata)
+        if (g.PDOF_stima != null) {
+          const rL = 5; const aL = deg2rad(g.PDOF_stima);
+          traces.push({type:'scatter', x:[-Math.cos(aL)*rL, Math.cos(aL)*rL], y:[-Math.sin(aL)*rL, Math.sin(aL)*rL], mode:'lines', line:{dash:'dash', color:'magenta', width:2}, name:'PDOF stimata'});
+        }
+        // Rimuove eventuale circonferenza non richiesta attorno a G1 e l'etichetta '0°'
+        const cleanedTraces = traces.filter(t => !(t && t.type==='scatter' && t.mode==='lines' && t.line && (t.line.color==='blue' || t.line.color==='#0000ff') && Array.isArray(t.x) && t.x.length>50 && !t.name));
+        const ann = annotations.filter(a => !(a && typeof a.text==='string' && a.text.trim().startsWith('0')));
+        const layout = { xaxis:{scaleanchor:'y', title:'X [m]'}, yaxis:{title:'Y [m]'}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, shapes, annotations: ann, margin:{t:60,l:60,r:10,b:60} };
+        Plotly.newPlot('plot', cleanedTraces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
         buildLayoutControls();
       }
 
@@ -161,11 +203,16 @@
         const v1post= vec(t.x1, t.y1, scale*t.V1_post_t, t.theta1_out_t);
         const v2pre = vec(t.x2, t.y2, scale*t.V2_pre, t.theta2_in_t);
         const v2post= vec(t.x2, t.y2, scale*t.V2_post_t, t.theta2_out_t);
+        const dv1 = { x: v1post.x - v1pre.x, y: v1post.y - v1pre.y };
+        const dv2 = { x: v2post.x - v2pre.x, y: v2post.y - v2pre.y };
         const traces = [
           arrow(t.x1, t.y1, v1pre.x, v1pre.y, 'rgb(102,179,255)', 'V1 pre'),
           arrow(t.x1, t.y1, v1post.x, v1post.y, 'rgb(0,0,255)', 'V1 post'),
           arrow(t.x2, t.y2, v2pre.x, v2pre.y, 'rgb(255,128,128)', 'V2 pre'),
-          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post')
+          arrow(t.x2, t.y2, v2post.x, v2post.y, 'rgb(255,0,0)', 'V2 post'),
+          // ΔV vectors
+          arrow(v1pre.x, v1pre.y, v1pre.x + dv1.x, v1pre.y + dv1.y, 'rgb(0,153,0)', 'ΔV1'),
+          arrow(v2pre.x, v2pre.y, v2pre.x + dv2.x, v2pre.y + dv2.y, 'rgb(0,153,0)', 'ΔV2')
         ];
         const shapes = [];
         const annotations = [
@@ -176,13 +223,17 @@
           {x0:t.x1, y0:t.y1, x1:v1pre.x, y1:v1pre.y, color:'rgb(102,179,255)'},
           {x0:t.x1, y0:t.y1, x1:v1post.x,y1:v1post.y, color:'rgb(0,0,255)'},
           {x0:t.x2, y0:t.y2, x1:v2pre.x, y1:v2pre.y, color:'rgb(255,128,128)'},
-          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'}
+          {x0:t.x2, y0:t.y2, x1:v2post.x,y1:v2post.y, color:'rgb(255,0,0)'},
+          {x0:v1pre.x, y0:v1pre.y, x1:v1pre.x + dv1.x, y1:v1pre.y + dv1.y, color:'rgb(0,153,0)'},
+          {x0:v2pre.x, y0:v2pre.y, x1:v2pre.x + dv2.x, y1:v2pre.y + dv2.y, color:'rgb(0,153,0)'}
         ];
         for (const a of arrs){ annotations.push({ x:a.x1, y:a.y1, ax:a.x0, ay:a.y0, xref:'x', yref:'y', axref:'x', ayref:'y', showarrow:true, arrowhead:3, arrowsize:1, arrowwidth:1.6, arrowcolor:a.color }); }
         if (t.PDOF_eff != null) {
           const r = 5; const a = deg2rad(t.PDOF_eff);
           shapes.push({type:'line', x0:-Math.cos(a)*r, y0:-Math.sin(a)*r, x1:Math.cos(a)*r, y1:Math.sin(a)*r, line:{dash:'dash', color:'black', width:2}});
           annotations.push({x:Math.cos(a)*r*1.05, y:Math.sin(a)*r*1.05, text: t.PDOF_eff.toFixed(1)+'°', showarrow:false});
+          // legend trace as well
+          traces.push({type:'scatter', x:[-Math.cos(a)*r, Math.cos(a)*r], y:[-Math.sin(a)*r, Math.sin(a)*r], mode:'lines', line:{dash:'dash', color:'black', width:2}, name:'PDOF effettiva'});
         }
         const titleAnn2 = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Chiusura triangoli', showarrow:false, font:{size:16}};
         annotations.push(titleAnn2);
@@ -278,6 +329,7 @@
         const r1_plot = Math.min(2, 2 * (w1/Math.max(w1,w2||1e-9)));
         const r2_plot = Math.min(2, 2 * (w2/Math.max(w1,w2||1e-9)));
         const r_max = Math.max(r1_plot, r2_plot, r1, r2) + 0.5;
+        const r_anno = r_max * 1.08; // spazio per etichette gradi esterne
 
         const traces = [];
         function sector(t1, t2, r, color){
@@ -288,25 +340,29 @@
           if (!wrap) pushArc(t1,t2); else { pushArc(t1,2*Math.PI); pushArc(0,t2); }
           // close to center
           pts.push({theta: pts[pts.length-1].theta, r:0}); pts.push({theta: pts[0].theta, r:0});
-          traces.push({type:'scatterpolar', mode:'lines', r: pts.map(p=>p.r), theta: pts.map(p=>p.theta), fill:'toself', fillcolor:'rgba(0,128,0,0.25)', line:{width:0}});
+          traces.push({type:'scatterpolar', mode:'lines', r: pts.map(p=>p.r), theta: pts.map(p=>p.theta), fill:'toself', fillcolor:'rgba(0,128,0,0.25)', line:{width:0}, showlegend:false});
         }
         // sectors and their opposites
         sector(range1, a1, 2.5, 'green'); sector((range1+Math.PI)%(2*Math.PI), (a1+Math.PI)%(2*Math.PI), 2.5, 'green');
         sector(range2, a2, 2.5, 'green'); sector((range2+Math.PI)%(2*Math.PI), (a2+Math.PI)%(2*Math.PI), 2.5, 'green');
 
         // Opposite arcs at r_max (cosmetic like matplotlib)
-        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a1_op), toDeg(a1)], mode:'lines', line:{color:'rgba(204,217,255,1)', width:2}});
-        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a2_op), toDeg(a2)], mode:'lines', line:{color:'rgba(255,204,204,1)', width:2}});
+        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a1_op), toDeg(a1)], mode:'lines', line:{color:'rgba(204,217,255,1)', width:2}, showlegend:false});
+        traces.push({type:'scatterpolar', r:[r_max, r_max], theta:[toDeg(a2_op), toDeg(a2)], mode:'lines', line:{color:'rgba(255,204,204,1)', width:2}, showlegend:false});
 
-        // Vectors
-        traces.push({type:'scatterpolar', r:[0, r1_plot], theta:[0, toDeg(a1)], mode:'lines', line:{color:'blue', width:2}, name:'PDOF veicolo 1'});
-        traces.push({type:'scatterpolar', r:[0, r2_plot], theta:[0, toDeg(a2)], mode:'lines', line:{color:'red', width:2}, name:'PDOF veicolo 2'});
+        // Vectors (legend shows angle and opposite)
+        function norm360(d){ d=((d%360)+360)%360; return d; }
+        function pairLabel(deg){ const a=norm360(deg).toFixed(1), b=norm360(deg+180).toFixed(1); return `${a}° / ${b}°`; }
+        const deg1 = a1*180/Math.PI; const deg2 = a2*180/Math.PI;
+        traces.push({type:'scatterpolar', r:[0, r1_plot], theta:[0, toDeg(a1)], mode:'lines', line:{color:'blue', width:2}, name:`PDOF veicolo 1 (${pairLabel(deg1)})`});
+        traces.push({type:'scatterpolar', r:[0, r2_plot], theta:[0, toDeg(a2)], mode:'lines', line:{color:'red', width:2}, name:`PDOF veicolo 2 (${pairLabel(deg2)})`});
 
-        // Target, opposite and stima/eff
-        let targetDeg = null; if (!useEff && targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
-        if (useEff && t.PDOF_eff != null) targetDeg = t.PDOF_eff;
-        if (targetDeg != null){ const opp = (targetDeg+180)%360; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,targetDeg], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}}); }
-        if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}}); }
+        // Target, stima ed effettiva (ognuna con angolo e opposto)
+        let targetDeg = null; if (targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
+        const effDeg = (useEff && t.PDOF_eff != null) ? t.PDOF_eff : null;
+        if (targetDeg != null){ const opp = (targetDeg+180)%360; const name=`PDOF target (${pairLabel(targetDeg)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,targetDeg], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'black', width:1.5}, showlegend:false}); }
+        if (!useEff && t.PDOF_stima != null){ const s=t.PDOF_stima; const opp=(s+180)%360; const name=`PDOF stimata (${pairLabel(s)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,s], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'magenta', width:1.5}, showlegend:false}); }
+        if (effDeg != null){ const opp=(effDeg+180)%360; const name=`PDOF effettiva (${pairLabel(effDeg)})`; traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,effDeg], mode:'lines', line:{dash:'dash', color:'darkorange', width:1.8}, name}); traces.push({type:'scatterpolar', r:[0,r_max], theta:[0,opp], mode:'lines', line:{dash:'dash', color:'darkorange', width:1.8}, showlegend:false}); }
 
         // G1, G2 markers
         traces.push({type:'scatterpolar', mode:'markers+text', r:[r1], theta:[toDeg(thG1)], marker:{color:'blue', size:8}, text:['G1'], textposition:'top center', showlegend:false});
@@ -314,6 +370,67 @@
 
         const layout = { showlegend:true, margin:{t:40,l:10,r:10,b:10}, polar:{ radialaxis:{visible:true, range:[0,r_max] } }, title: useEff? 'Cono di validità PDOF (effettiva)':'Cono di validità PDOF (stima)'};
         Plotly.newPlot('plot', traces, layout, {responsive:true});
+        try { Plotly.relayout('plot', {title: ''}); } catch(e) {}
+        // Migliora aspetto: etichette gradi e legenda in basso, pan/zoom abilitati
+        (function(){
+          const degA1 = (a1*180/Math.PI), degA2 = (a2*180/Math.PI);
+          const labels = [];
+          function fmt(d){ d=((d%360)+360)%360; return d.toFixed(1)+'\u00B0'; }
+          function t(thetaDeg, color){ return {type:'scatterpolar', mode:'text', r:[r_max*1.08], theta:[thetaDeg], text:[fmt(thetaDeg)], textfont:{color, size:12}, showlegend:false, hoverinfo:'skip', cliponaxis:false}; }
+          labels.push(t(degA1, 'blue')); labels.push(t(degA2, 'red'));
+          const tgtN = (Number.isFinite(parseFloat(targetDeg)) ? parseFloat(targetDeg) : null);
+          const stN = (Number.isFinite(parseFloat(t.PDOF_stima)) ? parseFloat(t.PDOF_stima) : null);
+          if (tgtN!=null) { labels.push(t(tgtN, 'black')); labels.push(t((tgtN+180)%360, 'black')); }
+          if (!useEff && stN!=null) { labels.push(t(stN, 'magenta')); labels.push(t((stN+180)%360, 'magenta')); }
+          labels.push(t((degA1+180)%360, 'blue')); labels.push(t((degA2+180)%360, 'red'));
+          try { Plotly.addTraces('plot', labels); } catch(e) {}
+          const layout2 = { showlegend:true, legend:{orientation:'h', x:0.5, y:-0.12, xanchor:'center', yanchor:'top'}, margin:{t:60,l:20,r:20,b:60}, dragmode:'pan', polar:{ radialaxis:{visible:true, range:[0, r_max*1.08] } }, title:'Cono di validità della PDOF' };
+          try { Plotly.react('plot', document.getElementById('plot').data||traces, layout2, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}}); } catch(e) {}
+          // Ensure no built-in title and set vertical legend on right
+          try { Plotly.relayout('plot', {title: '', 'legend.orientation':'v', 'legend.x':1.02, 'legend.y':1, 'legend.xanchor':'left', 'legend.yanchor':'top', 'margin.r':160, 'margin.b':40}); } catch(e) {}
+          // Update legend names with current angles (value and opposite)
+          try {
+            const gd = document.getElementById('plot');
+            const data = gd.data || [];
+            function norm(d){ d=((d%360)+360)%360; return d; }
+            function pair(deg){ return `${norm(deg).toFixed(1)}\u00B0 / ${norm(deg+180).toFixed(1)}\u00B0`; }
+            const d1 = pair(a1*180/Math.PI);
+            const d2 = pair(a2*180/Math.PI);
+            const targetName = (typeof targetDeg==='number') ? `PDOF target (${pair(targetDeg)})` : null;
+            const stimaName = (!useEff && typeof t.PDOF_stima==='number') ? `PDOF stimata (${pair(t.PDOF_stima)})` : null;
+            const effName = (useEff && typeof t.PDOF_eff==='number') ? `PDOF effettiva (${pair(t.PDOF_eff)})` : null;
+            data.forEach((tr,i)=>{
+              if (tr.type==='scatterpolar' && tr.mode==='lines' && tr.line && !tr.line.dash){
+                if (tr.line.color==='blue') Plotly.restyle('plot', {name: `PDOF veicolo 1 (${d1})`}, [i]);
+                if (tr.line.color==='red')  Plotly.restyle('plot', {name: `PDOF veicolo 2 (${d2})`}, [i]);
+              }
+              if (tr.type==='scatterpolar' && tr.mode==='lines' && tr.line && tr.line.dash==='dash'){
+                if (tr.line.color==='black' && targetName) Plotly.restyle('plot', {name: targetName}, [i]);
+                if (tr.line.color==='magenta' && stimaName) Plotly.restyle('plot', {name: stimaName}, [i]);
+                if (tr.line.color==='darkorange' && effName) Plotly.restyle('plot', {name: effName}, [i]);
+              }
+            });
+          } catch(e) {}
+          // Build draggable title + label annotations
+          (function(){
+            const anns = [];
+            const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:0.95, text:'Cono di validità della PDOF', showarrow:false, font:{size:16}};
+            anns.push(titleAnn);
+            function addLabel(txt, color, x, y){ anns.push({xref:'paper', yref:'paper', x, y, text:txt, showarrow:false, font:{color, size:12}}); }
+            function fmt(d){ d=((d%360)+360)%360; return d.toFixed(1)+'\u00B0'; }
+            const rightX = 1.08, leftX = -0.08; let y0 = 0.82, step=0.06;
+            addLabel(fmt(degA1), 'blue', rightX, y0); y0-=step; addLabel(fmt(degA2), 'red', rightX, y0); y0-=step; if (tgtN!=null){ addLabel(fmt(tgtN),'black', rightX, y0); y0-=step; } if (!useEff && stN!=null){ addLabel(fmt(stN),'magenta', rightX, y0); y0-=step; }
+            // left side
+            let yL = 0.18; addLabel(fmt((degA1+180)%360),'blue', leftX, yL); yL+=step; addLabel(fmt((degA2+180)%360),'red', leftX, yL); yL+=step; if (tgtN!=null){ addLabel(fmt((tgtN+180)%360),'black', leftX, yL); yL+=step; } if (!useEff && stN!=null){ addLabel(fmt((stN+180)%360),'magenta', leftX, yL); }
+            try { Plotly.relayout('plot', {annotations: anns}); } catch(e) {}
+            // Wire title sliders
+            const inX = document.getElementById('titleX'); const inY = document.getElementById('titleY');
+            function applyTitle(){ const x=parseFloat(inX.value)||0.5; const y=parseFloat(inY.value)||0.95; const cur = (document.getElementById('plot').layout.annotations||anns).slice(); cur[0] = {...cur[0], x, y}; Plotly.relayout('plot', {annotations: cur}); }
+            if (inX && inY){ inX.addEventListener('input', applyTitle); inY.addEventListener('input', applyTitle); applyTitle(); }
+          })();
+          // Slider Zoom
+          try { const z=document.getElementById('zoom'); if (z){ const base=r_max*1.08; const apply=()=>{ const f=parseFloat(z.value)||1; Plotly.relayout('plot', {'polar.radialaxis.range':[0, base*f]}); }; z.addEventListener('input', apply); apply(); } } catch(e) {}
+        })();
       }
 
       (async function init(){
@@ -328,11 +445,11 @@
         } else if (kind === 'cicloidi') {
           drawCicloidi(data.cicloidi||{});
         } else if (kind === 'pdof') {
+          addZoomCtrl();
           drawPDOFCone(data, false);
-          buildLayoutControls();
         } else if (kind === 'pdof_tri') {
+          addZoomCtrl();
           drawPDOFCone(data, true);
-          buildLayoutControls();
         }
       })();
     </script>
