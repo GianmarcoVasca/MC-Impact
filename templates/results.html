@@ -78,6 +78,9 @@
         {% if files_available['listato.txt'] %}
           <a class="btn" href="{{ url_for('download', filename='listato.txt') }}">listato.txt</a>
         {% endif %}
+        {% if files_available['results_payload.json'] %}
+          <a class="btn" href="{{ url_for('download_payload', run_id=run_id) }}">Salva simulazione</a>
+        {% endif %}
         <a class="btn" style="background:#868e96;" href="{{ url_for('index') }}">Home</a>
       </div>
     </div>
@@ -464,6 +467,17 @@
       // Esplora handler
       const btnEsplora = document.getElementById('btnEsplora');
       const btnTermina = document.getElementById('btnTermina');
+
+      if (btnTermina) {
+        btnTermina.addEventListener("click", async () => {
+          try {
+            await fetch(`/api/esplora_cancel/${runId}`, { method: "POST" });
+            const pinf = document.getElementById("esploraProgInfo");
+            if (pinf) pinf.textContent = "Interruzione richiesta...";
+          } catch (e) { /* ignore */ }
+        });
+      }
+
       btnEsplora.addEventListener('click', async ()=>{
         const m = document.getElementById('selMetric').value;
         const it = parseInt(document.getElementById('itMax').value||'20');
@@ -479,18 +493,32 @@
         if (log){ log.style.display='block'; log.textContent=''; }
         let stopPoll=false; const seenIters=new Set();
         (async function poll(){ if(stopPoll) return; try{ const r=await fetch(`/api/esplora_progress/${runId}`); if(r.ok){ const s=await r.json(); const cur=Math.max(0,parseInt(s.current||0)); const tot=Math.max(1,parseInt(s.total||it)); const pct=Math.min(100,Math.round(cur*100/tot)); if(bar) bar.style.width=pct+'%'; if(pinf) pinf.textContent=`${pct}% - ${cur}/${tot}`+(s.done?' - completato':''); if (s.last && s.last.iter && !seenIters.has(s.last.iter)) { seenIters.add(s.last.iter); const L=s.last; const media=(L.media_output!=null && !Number.isNaN(L.media_output))? L.media_output.toFixed(3):'NaN'; const std=(L.deviazione_std!=null && !Number.isNaN(L.deviazione_std))? L.deviazione_std.toFixed(3):'NaN'; const low=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output-3*L.deviazione_std):NaN; const high=(Number.isFinite(L.media_output)&&Number.isFinite(L.deviazione_std))? (L.media_output+3*L.deviazione_std):NaN; const bracket=(Number.isFinite(low)&&Number.isFinite(high))? ` [${low.toFixed(3)}, ${high.toFixed(3)}]`:''; if(log) { const n = (typeof L.campioni_validi==='number')? L.campioni_validi : undefined; const nS = (n!=null)? ` | n=${n}`:''; log.textContent+=`Iter ${L.iter.toString().padStart(2,' ')} | std=${std} | ${m}: ${media} +/- ${(Number.isNaN(L.deviazione_std)?'NaN':(3*L.deviazione_std).toFixed(3))}${bracket}${nS}\n`; log.scrollTop=log.scrollHeight; } } } } catch(e){} if(!stopPoll) setTimeout(poll,500); })();
-      // Termina handler
-      btnTermina.addEventListener("click", async ()=>{
+
+        let data;
         try {
-          await fetch(`/api/esplora_cancel/${runId}`, {method:"POST"});
-          const pinf = document.getElementById("esploraProgInfo");
-          if (pinf) pinf.textContent = "Interruzione richiesta...";
-        } catch(e) {}
-      });
-        const res = await fetch(`/api/esplora/${runId}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({metrica:m, max_iter:it, passo:ps, soglia_salto:sg, vars: (document.getElementById("selVars") ? Array.from(document.getElementById("selVars").selectedOptions).map(o=>o.value) : [])})});
-        const data = await res.json();
-        stopPoll = true;
-        if (!res.ok){ out.textContent = data.error || 'Errore'; return; }
+          const res = await fetch(`/api/esplora/${runId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              metrica: m,
+              max_iter: it,
+              passo: ps,
+              soglia_salto: sg,
+              vars: (document.getElementById("selVars") ? Array.from(document.getElementById("selVars").selectedOptions).map(o=>o.value) : [])
+            })
+          });
+          data = await res.json();
+          stopPoll = true;
+          if (!res.ok) {
+            out.textContent = data.error || 'Errore';
+            return;
+          }
+        } catch (e) {
+          stopPoll = true;
+          out.textContent = 'Errore durante l\'esplorazione';
+          return;
+        }
+
         const iters = data.iterazioni || [];
         if (iters.length===0){ out.textContent='Nessun dato'; return; }
         out.textContent = `Iterazioni: ${iters.length} - Salto rilevato: ${data.salto_rilevato?"si":"no"}`;

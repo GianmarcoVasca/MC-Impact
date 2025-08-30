@@ -519,29 +519,46 @@ def run():
         'stima_PDOF': _is_active(parametri, 'stima_PDOF'),
     }
 
-    return render_template(
-        "results.html",
-        best=best,
-        rows=[],
-        total=len(df_validi),
-        run_id=run_id,
-        variabili=variabili,
-        colonne_errori=colonne_errori,
-        graph_inputs=json.dumps(to_jsonable(graph_inputs)),
-        units=UNITS,
-        expandable_vars=expandable_vars,
-        used_params=used_params,
-        used_params_grouped=used_params_grouped,
-        flags=flags,
-        files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
-                         "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
-    )
+    payload = {
+        "best": best,
+        "rows": [],
+        "total": len(df_validi),
+        "run_id": run_id,
+        "variabili": variabili,
+        "colonne_errori": colonne_errori,
+        "graph_inputs": json.dumps(to_jsonable(graph_inputs)),
+        "units": UNITS,
+        "expandable_vars": expandable_vars,
+        "used_params": used_params,
+        "used_params_grouped": used_params_grouped,
+        "flags": flags,
+    }
+
+    payload_path = os.path.join(run_dir, "results_payload.json")
+    with open(payload_path, "w", encoding="utf-8") as pf:
+        json.dump(to_jsonable(payload), pf)
+
+    files_available = {
+        "risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
+        "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt")),
+        "results_payload.json": os.path.exists(payload_path),
+    }
+    payload["files_available"] = files_available
+    with open(payload_path, "w", encoding="utf-8") as pf:
+        json.dump(to_jsonable(payload), pf)
+
+    return render_template("results.html", **payload)
 
 
 @app.route("/download/<path:filename>")
 def download(filename):
     # Serve output files from project root
     return send_from_directory(BASE_DIR, filename, as_attachment=True)
+
+@app.route("/download_payload/<run_id>")
+def download_payload(run_id):
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    return send_from_directory(run_dir, "results_payload.json", as_attachment=True)
 
 @app.route("/api/run/<run_id>/graph_inputs")
 def api_graph_inputs(run_id):
@@ -696,6 +713,77 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
                 json.dump(to_jsonable(graph_inputs), gf)
         except Exception:
             pass
+        
+        ignora_prefix = ("punti_cicloide_",)
+        ignora_nomi = {
+            "cicloide_th", "cicloide_R",
+            "cic_A1", "cic_B1", "cic_A2", "cic_B2",
+            "cicloide_th1", "cicloide_th2", "cicloide_R1", "cicloide_R2"
+        }
+        best = {}
+        for k, v in riga_minima.items():
+            ks = str(k)
+            if ks.startswith("err_") or ks.startswith("errore_"):
+                continue
+            if any(ks.startswith(p) for p in ignora_prefix) or ks in ignora_nomi:
+                continue
+            if isinstance(v, (int, float)):
+                best[k] = round(v, 2)
+            else:
+                best[k] = v
+
+        expandable_vars = [
+            k for k, v in parametri.items()
+            if isinstance(v, (list, tuple)) and len(v) == 2 and v[0] != v[1]
+        ]
+
+        used_params = _format_used_params(to_jsonable(parametri), to_jsonable(targets))
+        try:
+            used_params = {k: v for k, v in used_params.items() if k not in best}
+        except Exception:
+            pass
+        used_params_grouped = _group_used_params(used_params)
+
+        def _is_active(d: dict, key: str) -> bool:
+            v = d.get(key)
+            if isinstance(v, (list, tuple)) and v:
+                v = v[0]
+            try:
+                return int(v) == 1
+            except Exception:
+                return False
+
+        flags = {
+            'chiusura_triangoli': _is_active(parametri, 'chiusura_triangoli'),
+            'cicloide_avanzata': _is_active(parametri, 'cicloide_avanzata'),
+            'stima_PDOF': _is_active(parametri, 'stima_PDOF'),
+        }
+
+        payload = {
+            "best": best,
+            "rows": [],
+            "total": len(df_validi),
+            "run_id": run_id,
+            "variabili": variabili,
+            "colonne_errori": colonne_errori,
+            "graph_inputs": json.dumps(to_jsonable(graph_inputs)),
+            "units": UNITS,
+            "expandable_vars": expandable_vars,
+            "used_params": used_params,
+            "used_params_grouped": used_params_grouped,
+            "flags": flags,
+        }
+        payload_path = os.path.join(run_dir, "results_payload.json")
+        with open(payload_path, "w", encoding="utf-8") as pf:
+            json.dump(to_jsonable(payload), pf)
+        files_available = {
+            "risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
+            "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt")),
+            "results_payload.json": os.path.exists(payload_path),
+        }
+        payload["files_available"] = files_available
+        with open(payload_path, "w", encoding="utf-8") as pf:
+            json.dump(to_jsonable(payload), pf)
 
         PROGRESS[key] = { **PROGRESS.get(key, {}), "done": True }
     except Exception as e:
@@ -830,8 +918,11 @@ def result(run_id):
         used_params=used_params,
         used_params_grouped=used_params_grouped,
         flags=flags,
-        files_available={"risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
-                         "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt"))}
+        files_available={
+            "risultati.txt": os.path.exists(os.path.join(BASE_DIR, "risultati.txt")),
+            "listato.txt": os.path.exists(os.path.join(BASE_DIR, "listato.txt")),
+            "results_payload.json": os.path.exists(os.path.join(run_dir, "results_payload.json")),
+        }
     )
 
 
