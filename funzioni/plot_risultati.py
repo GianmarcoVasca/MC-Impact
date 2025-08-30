@@ -644,14 +644,14 @@ def plotta_due_cicloidi(A1, B1, x1, y1, theta1, R1, lung1, ang1,
     plt.figure(figsize=(10, 7))
 
     # Prima cicloide
-    plt.plot(x1, y1, label=f'Cicloide 1: θ={theta1:.2f}, R={R1:.2f}, L={lung1:.2f}')
+    plt.plot(x1, y1, label=f'Cicloide 1: theta={theta1:.2f}, R={R1:.2f}, L={lung1:.2f}')
     plt.plot(*A1, 'ko')
     plt.plot(*B1, 'ro')
     plt.text(*A1, 'A1', fontsize=9, ha='right', va='top')
     plt.text(*B1, 'B1', fontsize=9, ha='right', va='bottom')
 
     # Seconda cicloide
-    plt.plot(x2, y2, label=f'Cicloide 2: θ={theta2:.2f}, R={R2:.2f}, L={lung2:.2f}')
+    plt.plot(x2, y2, label=f'Cicloide 2: theta={theta2:.2f}, R={R2:.2f}, L={lung2:.2f}')
     plt.plot(*A2, 'ks')
     plt.plot(*B2, 'rs')
     plt.text(*A2, 'A2', fontsize=9, ha='left', va='top')

@@ -367,19 +367,22 @@
         const c = graphInputs.cicloidi || {};
         if (!c.x1 || !c.x2) return;
         const traces = [
-          {type:'scatter', mode:'lines', x:c.x1, y:c.y1, name:`Cicloide 1: Î¸=${(c.theta1||0).toFixed?c.theta1.toFixed(2):c.theta1}, R=${(c.R1||0).toFixed?c.R1.toFixed(2):c.R1}, L=${(c.L1||0).toFixed?c.L1.toFixed(2):c.L1}`},
-          {type:'scatter', mode:'lines', x:c.x2, y:c.y2, name:`Cicloide 2: Î¸=${(c.theta2||0).toFixed?c.theta2.toFixed(2):c.theta2}, R=${(c.R2||0).toFixed?c.R2.toFixed(2):c.R2}, L=${(c.L2||0).toFixed?c.L2.toFixed(2):c.L2}`}
+          {type:'scatter', mode:'lines', x:c.x1, y:c.y1, name:`Cicloide 1: theta=${(c.theta1||0).toFixed?c.theta1.toFixed(2):c.theta1}, R=${(c.R1||0).toFixed?c.R1.toFixed(2):c.R1}, L=${(c.L1||0).toFixed?c.L1.toFixed(2):c.L1}`},
+          {type:'scatter', mode:'lines', x:c.x2, y:c.y2, name:`Cicloide 2: theta=${(c.theta2||0).toFixed?c.theta2.toFixed(2):c.theta2}, R=${(c.R2||0).toFixed?c.R2.toFixed(2):c.R2}, L=${(c.L2||0).toFixed?c.L2.toFixed(2):c.L2}`}
         ];
-        const shapes = [];
+        if (c.A1) traces.push({type:'scatter', mode:'markers+text', x:[c.A1[0]], y:[c.A1[1]], text:['A1'], textposition:'top right', marker:{color:'black', symbol:'circle'}, showlegend:false});
+        if (c.B1) traces.push({type:'scatter', mode:'markers+text', x:[c.B1[0]], y:[c.B1[1]], text:['B1'], textposition:'bottom right', marker:{color:'red', symbol:'circle'}, showlegend:false});
+        if (c.A2) traces.push({type:'scatter', mode:'markers+text', x:[c.A2[0]], y:[c.A2[1]], text:['A2'], textposition:'top left', marker:{color:'black', symbol:'square'}, showlegend:false});
+        if (c.B2) traces.push({type:'scatter', mode:'markers+text', x:[c.B2[0]], y:[c.B2[1]], text:['B2'], textposition:'bottom left', marker:{color:'red', symbol:'square'}, showlegend:false});
         if (c.A1 && c.ang1 != null) {
           const L=3, a=deg2rad(c.ang1);
-          shapes.push({type:'line', x0:c.A1[0]-L*Math.cos(a), y0:c.A1[1]-L*Math.sin(a), x1:c.A1[0]+L*Math.cos(a), y1:c.A1[1]+L*Math.sin(a), line:{color:'green', dash:'dash'}});
+          traces.push({type:'scatter', mode:'lines', x:[c.A1[0]-L*Math.cos(a), c.A1[0]+L*Math.cos(a)], y:[c.A1[1]-L*Math.sin(a), c.A1[1]+L*Math.sin(a)], line:{color:'green', dash:'dash'}, name:`Retta tangente 1: \u03B1=${(c.ang1||0).toFixed?c.ang1.toFixed(2):c.ang1}\u00B0`});
         }
         if (c.A2 && c.ang2 != null) {
           const L=3, a=deg2rad(c.ang2);
-          shapes.push({type:'line', x0:c.A2[0]-L*Math.cos(a), y0:c.A2[1]-L*Math.sin(a), x1:c.A2[0]+L*Math.cos(a), y1:c.A2[1]+L*Math.sin(a), line:{color:'magenta', dash:'dash'}});
+          traces.push({type:'scatter', mode:'lines', x:[c.A2[0]-L*Math.cos(a), c.A2[0]+L*Math.cos(a)], y:[c.A2[1]-L*Math.sin(a), c.A2[1]+L*Math.sin(a)], line:{color:'magenta', dash:'dash'}, name:`Retta tangente 2: \u03B1=${(c.ang2||0).toFixed?c.ang2.toFixed(2):c.ang2}\u00B0`});
         }
-        const layout = { title:{text:'Cicloidi post-urto', x:0.5, y:0.95}, xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'} };
+        const layout = { title:{text:'Cicloidi post-urto', x:0.5, y:0.95}, xaxis:{scaleanchor:'y'}, yaxis:{}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'} };
         Plotly.newPlot('cicloidi', traces, layout, {responsive:true});
         const cx=document.getElementById('cx'), cy=document.getElementById('cleg');
         if (cx && cy && cleg){ function applyC(){ const [lx,ly,lxa,lya]=legendCorner(cleg.value); Plotly.relayout('cicloidi', {'title.x':parseFloat(cx.value),'title.y':parseFloat(cy.value),'legend.x':lx,'legend.y':ly,'legend.xanchor':lxa,'legend.yanchor':lya}); } cx.oninput=applyC; cy.oninput=applyC; cleg.onchange=applyC; }

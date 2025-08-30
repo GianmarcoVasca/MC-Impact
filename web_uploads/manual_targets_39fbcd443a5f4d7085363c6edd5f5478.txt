@@ -1,0 +1,9 @@
+theta1_in = 2
+theta1_out = 330
+theta2_in = 165
+theta2_out = 105
+x1 = -1.27
+y1 = -0.91
+x2 = 0.98
+y2 = 0.72
+PDOF = 14

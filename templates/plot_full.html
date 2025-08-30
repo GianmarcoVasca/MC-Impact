@@ -235,19 +235,22 @@
 
       function drawCicloidi(c) {
         const traces = [];
-        if (c.x1 && c.y1) traces.push({type:'scatter', mode:'lines', x:c.x1, y:c.y1, name:'Cicloide 1'});
-        if (c.x2 && c.y2) traces.push({type:'scatter', mode:'lines', x:c.x2, y:c.y2, name:'Cicloide 2'});
-        const shapes = [];
+        if (c.x1 && c.y1) traces.push({type:'scatter', mode:'lines', x:c.x1, y:c.y1, name:`Cicloide 1: theta=${(c.theta1||0).toFixed?c.theta1.toFixed(2):c.theta1}, R=${(c.R1||0).toFixed?c.R1.toFixed(2):c.R1}, L=${(c.L1||0).toFixed?c.L1.toFixed(2):c.L1}`});
+        if (c.x2 && c.y2) traces.push({type:'scatter', mode:'lines', x:c.x2, y:c.y2, name:`Cicloide 2: theta=${(c.theta2||0).toFixed?c.theta2.toFixed(2):c.theta2}, R=${(c.R2||0).toFixed?c.R2.toFixed(2):c.R2}, L=${(c.L2||0).toFixed?c.L2.toFixed(2):c.L2}`});
+        if (c.A1) traces.push({type:'scatter', mode:'markers+text', x:[c.A1[0]], y:[c.A1[1]], text:['A1'], textposition:'top right', marker:{color:'black', symbol:'circle'}, showlegend:false});
+        if (c.B1) traces.push({type:'scatter', mode:'markers+text', x:[c.B1[0]], y:[c.B1[1]], text:['B1'], textposition:'bottom right', marker:{color:'red', symbol:'circle'}, showlegend:false});
+        if (c.A2) traces.push({type:'scatter', mode:'markers+text', x:[c.A2[0]], y:[c.A2[1]], text:['A2'], textposition:'top left', marker:{color:'black', symbol:'square'}, showlegend:false});
+        if (c.B2) traces.push({type:'scatter', mode:'markers+text', x:[c.B2[0]], y:[c.B2[1]], text:['B2'], textposition:'bottom left', marker:{color:'red', symbol:'square'}, showlegend:false});
         if (c.A1 && c.ang1 != null) {
           const L=3, a=deg2rad(c.ang1);
-          shapes.push({type:'line', x0:c.A1[0]-L*Math.cos(a), y0:c.A1[1]-L*Math.sin(a), x1:c.A1[0]+L*Math.cos(a), y1:c.A1[1]+L*Math.sin(a), line:{color:'green', dash:'dash'}});
+          traces.push({type:'scatter', mode:'lines', x:[c.A1[0]-L*Math.cos(a), c.A1[0]+L*Math.cos(a)], y:[c.A1[1]-L*Math.sin(a), c.A1[1]+L*Math.sin(a)], line:{color:'green', dash:'dash'}, name:`Retta tangente 1: \u03B1=${(c.ang1||0).toFixed?c.ang1.toFixed(2):c.ang1}\u00B0`});
         }
         if (c.A2 && c.ang2 != null) {
           const L=3, a=deg2rad(c.ang2);
-          shapes.push({type:'line', x0:c.A2[0]-L*Math.cos(a), y0:c.A2[1]-L*Math.sin(a), x1:c.A2[0]+L*Math.cos(a), y1:c.A2[1]+L*Math.sin(a), line:{color:'magenta', dash:'dash'}});
+          traces.push({type:'scatter', mode:'lines', x:[c.A2[0]-L*Math.cos(a), c.A2[0]+L*Math.cos(a)], y:[c.A2[1]-L*Math.sin(a), c.A2[1]+L*Math.sin(a)], line:{color:'magenta', dash:'dash'}, name:`Retta tangente 2: \u03B1=${(c.ang2||0).toFixed?c.ang2.toFixed(2):c.ang2}\u00B0`});
         }
         const titleAnn3 = {xref:'paper', yref:'paper', x:0.5, y:1.05, text:'Cicloidi post-urto', showarrow:false, font:{size:16}};
-        const layout = { xaxis:{scaleanchor:'y'}, yaxis:{}, shapes, margin:{t:60,l:60,r:10,b:60}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, annotations:[titleAnn3] };
+        const layout = { xaxis:{scaleanchor:'y'}, yaxis:{}, margin:{t:60,l:60,r:10,b:60}, showlegend:true, legend:{x:1,y:1,xanchor:'right',yanchor:'top'}, annotations:[titleAnn3] };
         Plotly.newPlot('plot', traces, layout, {responsive:true, scrollZoom:true, edits:{legendPosition:true, annotationPosition:true}});
       }
 
@@ -350,9 +353,13 @@
         traces.push({type:'scatterpolar', r:[0, r2_plot], theta:[0, toDeg(a2)], mode:'lines', line:{color:'red', width:2}, name:`PDOF veicolo 2 (${pairLabel(deg2)})`});
 
         // Target, stima ed effettiva (ognuna con angolo e opposto)
-        let targetDeg = null; 
+        let targetDeg = null;
         if (targets && targets.PDOF && Array.isArray(targets.PDOF)) targetDeg = targets.PDOF[0];
-        const effDeg = (useEff && t.PDOF_eff != null) ? t.PDOF_eff : null;
+        let effDeg = null;
+        if (useEff) {
+          effDeg = t.PDOF_eff ?? data.pdof?.eff ?? data.triangoli?.PDOF_eff;
+          effDeg = effDeg !== undefined ? parseFloat(effDeg) : null;
+        }
 
         // Mostra la PDOF target (nera tratteggiata) solo se NON siamo in modalità effettiva
         if (!useEff && targetDeg != null){ 
@@ -400,22 +407,23 @@
         }
 
         // Mostra la PDOF effettiva (nera, continua, spessa) solo in modalità effettiva
-        if (effDeg != null){ 
-          const opp = (effDeg+180)%360; 
-          const name = `PDOF effettiva (${pairLabel(effDeg)})`; 
+        if (effDeg != null){
+          const opp = (effDeg+180)%360;
+          const name = `PDOF effettiva (${pairLabel(effDeg)})`;
           traces.push({
-            type:'scatterpolar', 
-            r:[0,r_max], 
-            theta:[0,effDeg], 
-            mode:'lines', 
+            type:'scatterpolar',
+            r:[0,r_max],
+            theta:[0,effDeg],
+            mode:'lines',
             line:{color:'black', width:2.2}, // nero, continua, spessa
-            name
+            name,
+            showlegend:true
           }); 
           traces.push({
-            type:'scatterpolar', 
-            r:[0,r_max], 
+            type:'scatterpolar',
+            r:[0,r_max],
             theta:[0,opp], 
-            mode:'lines', 
+            mode:'lines',
             line:{color:'black', width:2.2}, 
             showlegend:false
           }); 
@@ -455,35 +463,92 @@
             const d2 = pair(a2*180/Math.PI);
             const targetName = (typeof targetDeg==='number') ? `PDOF target (${pair(targetDeg)})` : null;
             const stimaName = (!useEff && typeof t.PDOF_stima==='number') ? `PDOF stimata (${pair(t.PDOF_stima)})` : null;
-            const effName = (useEff && typeof t.PDOF_eff==='number') ? `PDOF effettiva (${pair(t.PDOF_eff)})` : null;
+            const effName = (useEff && typeof effDeg==='number') ? `PDOF effettiva (${pair(effDeg)})` : null;
             data.forEach((tr,i)=>{
-              if (tr.type==='scatterpolar' && tr.mode==='lines' && tr.line && !tr.line.dash){
-                if (tr.line.color==='blue') Plotly.restyle('plot', {name: `PDOF veicolo 1 (${d1})`}, [i]);
-                if (tr.line.color==='red')  Plotly.restyle('plot', {name: `PDOF veicolo 2 (${d2})`}, [i]);
-              }
-              if (tr.type==='scatterpolar' && tr.mode==='lines' && tr.line && tr.line.dash==='dash'){
-                if (tr.line.color==='black' && targetName) Plotly.restyle('plot', {name: targetName}, [i]);
-                if (tr.line.color==='magenta' && stimaName) Plotly.restyle('plot', {name: stimaName}, [i]);
-                if (tr.line.color==='darkorange' && effName) Plotly.restyle('plot', {name: effName}, [i]);
+              if (tr.type==='scatterpolar' && tr.mode==='lines' && tr.line){
+                if (!tr.line.dash){
+                  if (tr.line.color==='blue') Plotly.restyle('plot', {name: `PDOF veicolo 1 (${d1})`}, [i]);
+                  if (tr.line.color==='red')  Plotly.restyle('plot', {name: `PDOF veicolo 2 (${d2})`}, [i]);
+                  if (tr.line.color==='black' && effName) Plotly.restyle('plot', {name: effName}, [i]);
+                } else if (tr.line.dash==='dash'){
+                  if (tr.line.color==='black' && targetName) Plotly.restyle('plot', {name: targetName}, [i]);
+                  if (tr.line.color==='magenta' && stimaName) Plotly.restyle('plot', {name: stimaName}, [i]);
+                }
               }
             });
           } catch(e) {}
           // Build draggable title + label annotations
           (function(){
             const anns = [];
-            const titleAnn = {xref:'paper', yref:'paper', x:0.5, y:0.95, text:'Cono di validità della PDOF', showarrow:false, font:{size:16}};
+            const titleAnn = {
+              xref:'paper', yref:'paper',
+              x:0.5, y:0.95,
+              text:'Cono di validità della PDOF',
+              showarrow:false,
+              font:{size:16}
+            };
             anns.push(titleAnn);
-            function addLabel(txt, color, x, y){ anns.push({xref:'paper', yref:'paper', x, y, text:txt, showarrow:false, font:{color, size:12}}); }
+
+            function addLabel(txt, color, x, y){
+              anns.push({
+                xref:'paper', yref:'paper',
+                x, y, text:txt,
+                showarrow:false,
+                font:{color, size:12}
+              });
+            }
             function fmt(d){ d=((d%360)+360)%360; return d.toFixed(1)+'\u00B0'; }
-            const rightX = 1.08, leftX = -0.08; let y0 = 0.82, step=0.06;
-            addLabel(fmt(degA1), 'blue', rightX, y0); y0-=step; addLabel(fmt(degA2), 'red', rightX, y0); y0-=step; if (tgtN!=null){ addLabel(fmt(tgtN),'black', rightX, y0); y0-=step; } if (!useEff && stN!=null){ addLabel(fmt(stN),'magenta', rightX, y0); y0-=step; }
-            // left side
-            let yL = 0.18; addLabel(fmt((degA1+180)%360),'blue', leftX, yL); yL+=step; addLabel(fmt((degA2+180)%360),'red', leftX, yL); yL+=step; if (tgtN!=null){ addLabel(fmt((tgtN+180)%360),'black', leftX, yL); yL+=step; } if (!useEff && stN!=null){ addLabel(fmt((stN+180)%360),'magenta', leftX, yL); }
+
+            const rightX = 1.08, leftX = -0.08;
+            let y0 = 0.82, step=0.06;
+
+            // Etichette principali
+            addLabel(fmt(degA1), 'blue', rightX, y0); y0-=step;
+            addLabel(fmt(degA2), 'red',  rightX, y0); y0-=step;
+
+            // Etichetta nera → effDeg se effettiva, altrimenti targetDeg
+            const blackVal = (useEff && typeof effDeg === 'number') ? effDeg : tgtN;
+            if (blackVal != null) {
+              addLabel(fmt(blackVal), 'black', rightX, y0);
+              y0-=step;
+            }
+
+            // Etichetta magenta solo se NON effettiva
+            if (!useEff && stN!=null){
+              addLabel(fmt(stN),'magenta', rightX, y0);
+              y0-=step;
+            }
+
+            // lato sinistro
+            let yL = 0.18;
+            addLabel(fmt((degA1+180)%360), 'blue', leftX, yL); yL+=step;
+            addLabel(fmt((degA2+180)%360), 'red',  leftX, yL); yL+=step;
+
+            if (blackVal != null) {
+              addLabel(fmt((blackVal+180)%360), 'black', leftX, yL);
+              yL+=step;
+            }
+            if (!useEff && stN!=null){
+              addLabel(fmt((stN+180)%360),'magenta', leftX, yL);
+            }
+
             try { Plotly.relayout('plot', {annotations: anns}); } catch(e) {}
+
             // Wire title sliders
-            const inX = document.getElementById('titleX'); const inY = document.getElementById('titleY');
-            function applyTitle(){ const x=parseFloat(inX.value)||0.5; const y=parseFloat(inY.value)||0.95; const cur = (document.getElementById('plot').layout.annotations||anns).slice(); cur[0] = {...cur[0], x, y}; Plotly.relayout('plot', {annotations: cur}); }
-            if (inX && inY){ inX.addEventListener('input', applyTitle); inY.addEventListener('input', applyTitle); applyTitle(); }
+            const inX = document.getElementById('titleX');
+            const inY = document.getElementById('titleY');
+            function applyTitle(){
+              const x=parseFloat(inX.value)||0.5;
+              const y=parseFloat(inY.value)||0.95;
+              const cur = (document.getElementById('plot').layout.annotations||anns).slice();
+              cur[0] = {...cur[0], x, y};
+              Plotly.relayout('plot', {annotations: cur});
+            }
+            if (inX && inY){
+              inX.addEventListener('input', applyTitle);
+              inY.addEventListener('input', applyTitle);
+              applyTitle();
+            }
           })();
           // Slider Zoom
           try { const z=document.getElementById('zoom'); if (z){ const base=r_max*1.08; const apply=()=>{ const f=parseFloat(z.value)||1; Plotly.relayout('plot', {'polar.radialaxis.range':[0, base*f]}); }; z.addEventListener('input', apply); apply(); } } catch(e) {}
@@ -492,21 +557,30 @@
 
       (async function init(){
         const data = await loadInputs();
+
         if (kind === 'scatter') {
           const ctrls = document.getElementById('controls');
-          buildScatterControls((data._meta && data._meta.variabili)||[], (data._meta && data._meta.colonne_errori)||[]);
+          buildScatterControls(
+            (data._meta && data._meta.variabili) || [],
+            (data._meta && data._meta.colonne_errori) || []
+          );
+
         } else if (kind === 'vectors') {
           drawVectors(data.vectors);
+
         } else if (kind === 'triangoli') {
           drawTriangoli(data.triangoli);
+
         } else if (kind === 'cicloidi') {
-          drawCicloidi(data.cicloidi||{});
+          drawCicloidi(data.cicloidi || {});
+
         } else if (kind === 'pdof') {
           addZoomCtrl();
-          drawPDOFCone(data, false);
+          drawPDOFCone(data, false); // stima/target
+
         } else if (kind === 'pdof_tri') {
           addZoomCtrl();
-          drawPDOFCone(data, true);
+          drawPDOFCone(data, true);  // effettiva (usa effDeg anche per etichetta nera)
         }
       })();
     </script>

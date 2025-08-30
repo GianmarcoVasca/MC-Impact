@@ -398,6 +398,11 @@ def run():
 
     # Build graph inputs (only necessary fields)
     def get_val(name, default=None):
+        if name == 'PDOF_eff':
+            for alt in ('PDOF_eff', 'PDOF_effettiva', 'PDOF_effettivo'):
+                if alt in riga_minima:
+                    return riga_minima[alt]
+            return default
         return riga_minima[name] if name in riga_minima else default
 
     graph_inputs = {
@@ -477,18 +482,13 @@ def run():
             "stima": get_val('PDOF_stima'),
             "eff": get_val('PDOF_eff')
         }
+        with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as gf:
+            json.dump(to_jsonable(graph_inputs), gf)
     except Exception:
         pass
 
     # Limit preview rows to avoid overloading the page
     preview = df_validi.head(50).to_dict(orient="records")
-
-    # Persist graph_inputs for fullscreen pages
-    try:
-        with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as gf:
-            json.dump(to_jsonable(graph_inputs), gf)
-    except Exception:
-        pass
 
     # Prepara elenco variabili espandibili (range definiti)
     expandable_vars = [
@@ -612,6 +612,11 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 
         # Prepara graph_inputs come in /run
         def get_val(name, default=None):
+            if name == 'PDOF_eff':
+                for alt in ('PDOF_eff', 'PDOF_effettiva', 'PDOF_effettivo'):
+                    if alt in riga_minima:
+                        return riga_minima[alt]
+                return default
             return riga_minima[name] if name in riga_minima else default
         graph_inputs = {
             "vectors": {
@@ -686,9 +691,6 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
                 "stima": get_val('PDOF_stima'),
                 "eff": get_val('PDOF_eff')
             }
-        except Exception:
-            pass
-        try:
             run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
             with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as gf:
                 json.dump(to_jsonable(graph_inputs), gf)
