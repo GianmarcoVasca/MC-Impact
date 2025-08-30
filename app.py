@@ -562,6 +562,28 @@ def download_payload(run_id):
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
     return send_from_directory(run_dir, "results_payload.json", as_attachment=True)
 
+
+@app.route("/load_payload", methods=["POST"])
+def load_payload():
+    """Load a previously saved results payload and show the results page."""
+    payload_file = request.files.get("payload_file")
+    if not payload_file or not payload_file.filename:
+        flash("Carica un file results_payload.json", "error")
+        return redirect(url_for("index"))
+    try:
+        payload = json.load(payload_file)
+    except Exception:
+        flash("File results_payload.json non valido", "error")
+        return redirect(url_for("index"))
+    files_available = payload.get("files_available") or {
+        "risultati.txt": False,
+        "listato.txt": False,
+        "results_payload.json": False,
+    }
+    payload["files_available"] = files_available
+    return render_template("results.html", **payload)
+
+
 @app.route("/api/run/<run_id>/graph_inputs")
 def api_graph_inputs(run_id):
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")

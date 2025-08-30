@@ -74,6 +74,17 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
+    <div class="card" style="margin-bottom:1rem;">
+      <form action="{{ url_for('load_payload') }}" method="post" enctype="multipart/form-data">
+        <div class="row">
+          <label for="payload_file">Carica un file di salvataggio .json</label>
+          <input type="file" id="payload_file" name="payload_file" accept=".json" />
+        </div>
+        <div class="actions">
+          <button type="submit">Apri risultati salvati</button>
+        </div>
+      </form>
+    </div>
 
     <div class="card">
       <form id="mcForm" action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
