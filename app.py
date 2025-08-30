@@ -532,6 +532,8 @@ def run():
         "used_params": used_params,
         "used_params_grouped": used_params_grouped,
         "flags": flags,
+        "parametri": to_jsonable(parametri),
+        "targets": to_jsonable(targets),
     }
 
     payload_path = os.path.join(run_dir, "results_payload.json")
@@ -772,6 +774,8 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
             "used_params": used_params,
             "used_params_grouped": used_params_grouped,
             "flags": flags,
+            "parametri": to_jsonable(parametri),
+            "targets": to_jsonable(targets),
         }
         payload_path = os.path.join(run_dir, "results_payload.json")
         with open(payload_path, "w", encoding="utf-8") as pf:
@@ -992,12 +996,24 @@ def api_esplora(run_id):
 
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
     meta_path = os.path.join(run_dir, "meta.json")
-    if not os.path.exists(meta_path):
-        return jsonify({"error": "run non trovato"}), 404
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-    parametri = meta.get("parametri", {})
-    targets = meta.get("targets", {})
+    parametri = {}
+    targets = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        parametri = meta.get("parametri", {})
+        targets = meta.get("targets", {})
+    else:
+        payload_path = os.path.join(run_dir, "results_payload.json")
+        if not os.path.exists(payload_path):
+            return jsonify({"error": "run non trovato"}), 404
+        with open(payload_path, "r", encoding="utf-8") as pf:
+            payload = json.load(pf)
+        parametri = payload.get("parametri", {})
+        targets = payload.get("targets", {})
+
+    if not parametri or not targets:
+        return jsonify({"error": "parametri o targets mancanti"}), 400
 
     if not metric:
         return jsonify({"error": "metrica non specificata"}), 400
