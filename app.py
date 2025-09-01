@@ -7,6 +7,7 @@ import json
 import math
 import time
 import threading
+import shutil
 from io import StringIO
 
 # Reuse existing project logic
@@ -61,6 +62,22 @@ UNITS: dict[str, str] = {
     # PDOF
     "PDOF_stima": "deg", "PDOF_eff": "deg",
 }
+
+def cleanup_uploads(keep_run_id: str | None = None):
+    """Remove leftover uploaded files and run directories except the one to keep."""
+    if not os.path.isdir(UPLOAD_DIR):
+        return
+    for name in os.listdir(UPLOAD_DIR):
+        path = os.path.join(UPLOAD_DIR, name)
+        try:
+            if os.path.isdir(path) and name.startswith("run_"):
+                if keep_run_id and name == f"run_{keep_run_id}":
+                    continue
+                shutil.rmtree(path)
+            elif os.path.isfile(path) and name.endswith(".txt"):
+                os.remove(path)
+        except Exception:
+            pass
 
 
 def _format_used_params(params: dict | None, targets: dict | None):
@@ -271,7 +288,7 @@ def to_jsonable(obj):
     return str(obj)
 
 
-@app.route("/")
+@app.route("/home")
 def index():
     # Expose defaults and a minimal form
     defaults = {
@@ -279,6 +296,10 @@ def index():
         "has_default_targets": os.path.exists(os.path.join(BASE_DIR, "targets.txt")),
     }
     return render_template("index.html", defaults=defaults)
+
+@app.route("/")
+def intro():
+    return render_template("intro.html")
 
 
 @app.route("/logo.png")
@@ -328,6 +349,7 @@ def api_cancel(run_id):
 def run():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and override_N.isdigit()) else None
+    cleanup_uploads()
 
     input_mode = request.form.get("input_mode", "upload")
     if input_mode == "manual":
@@ -575,12 +597,46 @@ def load_payload():
     except Exception:
         flash("File results_payload.json non valido", "error")
         return redirect(url_for("index"))
+    
+    run_id = payload.get("run_id") or str(uuid.uuid4())
+    cleanup_uploads()
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "results_payload.json"), "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+
+    rows = payload.get("rows") or []
+    if rows:
+        df = pd.DataFrame(rows)
+        with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
+            pickle.dump(df, f)
+    best = payload.get("best") or {}
+    with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
+        pickle.dump(best, f)
+    meta = {
+        "variabili": payload.get("variabili", []),
+        "colonne_errori": payload.get("colonne_errori", []),
+        "parametri": payload.get("parametri", {}),
+        "targets": payload.get("targets", {}),
+    }
+    with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f)
+    graph_inputs = payload.get("graph_inputs") or {}
+    if isinstance(graph_inputs, str):
+        try:
+            graph_inputs = json.loads(graph_inputs)
+        except Exception:
+            graph_inputs = {}
+    with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as f:
+        json.dump(graph_inputs, f)
+
     files_available = payload.get("files_available") or {
         "risultati.txt": False,
         "listato.txt": False,
-        "results_payload.json": False,
+        "results_payload.json": True,
     }
     payload["files_available"] = files_available
+    payload["run_id"] = run_id
     return render_template("results.html", **payload)
 
 
@@ -820,6 +876,7 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 def start_async():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
+    cleanup_uploads()
 
     input_mode = request.form.get("input_mode", "upload")
     if input_mode == "manual":
@@ -1036,6 +1093,10 @@ def api_esplora(run_id):
 
     if not parametri or not targets:
         return jsonify({"error": "parametri o targets mancanti"}), 400
+    
+    # Per l'esplorazione forza sempre alcuni flag a zero
+    for k in ("cicloide_avanzata", "chiusura_triangoli"):
+        parametri[k] = [0, 0]
 
     if not metric:
         return jsonify({"error": "metrica non specificata"}), 400
