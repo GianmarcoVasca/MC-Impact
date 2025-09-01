@@ -8,7 +8,6 @@ import time
 import threading
 import shutil
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Manager
 
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
@@ -25,16 +24,16 @@ from funzioni.lettura_e_scrittura import (
 from funzioni.operazioni import calcoli
 
 from multiprocessing import Manager, freeze_support
+from multiprocessing.managers import SyncManager
 
 def create_manager():
     return Manager()
 
 app = Flask(__name__)
-secret_key = os.environ.get("SECRET_KEY")
-if not secret_key:
-    app.logger.critical("SECRET_KEY not set")
+secret = os.environ.get("SECRET_KEY")
+if not secret:
     raise RuntimeError("SECRET_KEY not set")
-app.secret_key = secret_key
+app.secret_key = secret
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
@@ -52,10 +51,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "web_uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-manager = Manager()
-PROGRESS: dict[str, dict] = manager.dict()
-PROGRESS_EXPLORA: dict[str, dict] = manager.dict()
-EXECUTOR = ProcessPoolExecutor(max_workers=MAX_WORKERS)
+# Initialized in the main entry point to avoid multiprocessing issues on Windows.
+manager: SyncManager | None = None
+PROGRESS: dict[str, dict] = {}
+PROGRESS_EXPLORA: dict[str, dict] = {}
+EXECUTOR: ProcessPoolExecutor | None = None
 PENDING_FUTURES: dict[str, object] = {}
 PENDING_LOCK = threading.Lock()
 
@@ -1611,5 +1611,8 @@ def _build_manual_files_from_form(form) -> tuple[str, str]:
 if __name__ == "__main__":
     freeze_support()
     manager = create_manager()
+    PROGRESS = manager.dict()
+    PROGRESS_EXPLORA = manager.dict()
+    EXECUTOR = ProcessPoolExecutor(max_workers=MAX_WORKERS)
     cleanup_uploads()
     app.run(debug=True)  # o False in produzione

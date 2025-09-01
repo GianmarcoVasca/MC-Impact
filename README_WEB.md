@@ -10,7 +10,9 @@ pip install flask pandas numpy
 ```
 
 Avvio
+Prima di avviare l'applicazione è necessario impostare la variabile d'ambiente `SECRET_KEY`:
 ```
+export SECRET_KEY='cambia-questo-valore'
 python app.py
 ```
 
