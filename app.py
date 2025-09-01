@@ -1651,4 +1651,4 @@ if __name__ == "__main__":
     PROGRESS_EXPLORA = manager.dict()
     EXECUTOR = ProcessPoolExecutor(max_workers=MAX_WORKERS)
     cleanup_uploads()
-    app.run(debug=True)  # o False in produzione
+    app.run(debug=False)  # o False in produzione
