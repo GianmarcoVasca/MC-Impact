@@ -2,13 +2,15 @@
 import os
 from werkzeug.utils import secure_filename
 import uuid
-import pickle
 import json
 import math
 import time
 import threading
 import shutil
-from io import StringIO
+
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Reuse existing project logic
 import pandas as pd
@@ -21,7 +23,16 @@ from funzioni.lettura_e_scrittura import (
 from funzioni.operazioni import calcoli
 
 app = Flask(__name__)
-app.secret_key = "mc-impact-secret-key"
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
+csrf = CSRFProtect(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
+
+ALLOWED_UPLOADS = {".txt"}
+ALLOWED_PAYLOAD = {".json"}
+ALLOWED_DOWNLOADS = {"risultati.txt", "listato.txt"}
+MAX_ITERATIONS = 1000000
+UPLOAD_TTL_SECONDS = 3600  # 1 hour
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "web_uploads")
@@ -64,20 +75,32 @@ UNITS: dict[str, str] = {
 }
 
 def cleanup_uploads(keep_run_id: str | None = None):
-    """Remove leftover uploaded files and run directories except the one to keep."""
+    """Remove old uploaded files and run directories except the one to keep."""
     if not os.path.isdir(UPLOAD_DIR):
         return
+    now = time.time()
     for name in os.listdir(UPLOAD_DIR):
         path = os.path.join(UPLOAD_DIR, name)
         try:
             if os.path.isdir(path) and name.startswith("run_"):
-                if keep_run_id and name == f"run_{keep_run_id}":
+                rid = name[4:]
+                if keep_run_id and rid == keep_run_id:
                     continue
-                shutil.rmtree(path)
-            elif os.path.isfile(path) and name.endswith(".txt"):
-                os.remove(path)
+                if now - os.path.getmtime(path) > UPLOAD_TTL_SECONDS:
+                    shutil.rmtree(path)
+            elif os.path.isfile(path) and name.endswith((".txt", ".json")):
+                if now - os.path.getmtime(path) > UPLOAD_TTL_SECONDS:
+                    os.remove(path)
         except Exception:
             pass
+
+
+def _valid_run_id(run_id: str) -> bool:
+    try:
+        uuid.UUID(run_id)
+        return True
+    except Exception:
+        return False
 
 
 def _format_used_params(params: dict | None, targets: dict | None):
@@ -197,6 +220,8 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
         N = int(override_N)
     else:
         N = int(parametri.get("N", (1000, 1000))[0])  # default fallback
+    if N > MAX_ITERATIONS:
+        raise ValueError(f"N massimo consentito {MAX_ITERATIONS}")
 
     risultati_validi = []
 
@@ -339,25 +364,32 @@ def favicon_jpg():
 
 @app.route("/api/cancel/<run_id>", methods=["POST"])
 def api_cancel(run_id):
-    if run_id not in PROGRESS:
+    if not _valid_run_id(run_id) or run_id not in PROGRESS:
         return jsonify({"error": "run non trovato"}), 404
     PROGRESS[run_id] = {**PROGRESS.get(run_id, {}), "cancel": True}
     return jsonify({"status": "cancelling"})
 
 
-@app.route("/run", methods=["POST"]) 
+@app.route("/run", methods=["POST"])
 def run():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and override_N.isdigit()) else None
-    cleanup_uploads()
+    run_id = str(uuid.uuid4())
+    cleanup_uploads(keep_run_id=run_id)
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    os.makedirs(run_dir, exist_ok=True)
 
     input_mode = request.form.get("input_mode", "upload")
     if input_mode == "manual":
         try:
-            dati_path, targets_path = _build_manual_files_from_form(request.form)
+            dati_tmp, targets_tmp = _build_manual_files_from_form(request.form)
         except ValueError as e:
             flash(str(e), "error")
             return redirect(url_for("index"))
+        dati_path = os.path.join(run_dir, "dati.txt")
+        targets_path = os.path.join(run_dir, "targets.txt")
+        shutil.move(dati_tmp, dati_path)
+        shutil.move(targets_tmp, targets_path)
     else:
         # Richiede esplicitamente upload dei file
         dati_file = request.files.get("dati_file")
@@ -365,11 +397,16 @@ def run():
         if not dati_file or not targets_file or not dati_file.filename or not targets_file.filename:
             flash("Carica sia dati.txt che targets.txt.", "error")
             return redirect(url_for("index"))
-        # Save uploads
-        dati_name = secure_filename(dati_file.filename) or "dati.txt"
-        targets_name = secure_filename(targets_file.filename) or "targets.txt"
-        dati_path = os.path.join(UPLOAD_DIR, dati_name)
-        targets_path = os.path.join(UPLOAD_DIR, targets_name)
+        dati_name = secure_filename(dati_file.filename)
+        targets_name = secure_filename(targets_file.filename)
+        if not dati_name or os.path.splitext(dati_name)[1].lower() not in ALLOWED_UPLOADS:
+            flash("Formato dati non consentito", "error")
+            return redirect(url_for("index"))
+        if not targets_name or os.path.splitext(targets_name)[1].lower() not in ALLOWED_UPLOADS:
+            flash("Formato targets non consentito", "error")
+            return redirect(url_for("index"))
+        dati_path = os.path.join(run_dir, "dati.txt")
+        targets_path = os.path.join(run_dir, "targets.txt")
         dati_file.save(dati_path)
         targets_file.save(targets_path)
 
@@ -384,13 +421,10 @@ def run():
     variabili = [c for c in df_validi.columns if not (c.lower().startswith("errore_") or c.lower().startswith("err_"))]
 
     # Persist run on disk for interactive API usage
-    run_id = str(uuid.uuid4())
-    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
-    os.makedirs(run_dir, exist_ok=True)
-    with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
-        pickle.dump(df_validi, f)
-    with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
-        pickle.dump(riga_minima, f)
+    with open(os.path.join(run_dir, "df.json"), "w", encoding="utf-8") as f:
+        df_validi.to_json(f, orient="records")
+    with open(os.path.join(run_dir, "best.json"), "w", encoding="utf-8") as f:
+        json.dump(to_jsonable(riga_minima.to_dict()), f)
     with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump({
             "variabili": variabili,
@@ -579,12 +613,20 @@ def run():
 
 @app.route("/download/<path:filename>")
 def download(filename):
-    # Serve output files from project root
-    return send_from_directory(BASE_DIR, filename, as_attachment=True)
+    # Serve only whitelisted output files from project root
+    name = secure_filename(filename)
+    if name not in ALLOWED_DOWNLOADS:
+        return jsonify({"error": "file non disponibile"}), 404
+    return send_from_directory(BASE_DIR, name, as_attachment=True)
 
 @app.route("/download_payload/<run_id>")
 def download_payload(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    path = os.path.join(run_dir, "results_payload.json")
+    if not os.path.exists(path):
+        return jsonify({"error": "run non trovato"}), 404
     return send_from_directory(run_dir, "results_payload.json", as_attachment=True)
 
 
@@ -595,6 +637,10 @@ def load_payload():
     if not payload_file or not payload_file.filename:
         flash("Carica un file results_payload.json", "error")
         return redirect(url_for("index"))
+    fname = secure_filename(payload_file.filename)
+    if os.path.splitext(fname)[1].lower() not in ALLOWED_PAYLOAD:
+        flash("Formato file non consentito", "error")
+        return redirect(url_for("index"))
     try:
         payload = json.load(payload_file)
     except Exception:
@@ -602,7 +648,7 @@ def load_payload():
         return redirect(url_for("index"))
     
     run_id = payload.get("run_id") or str(uuid.uuid4())
-    cleanup_uploads()
+    cleanup_uploads(keep_run_id=run_id)
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
     with open(os.path.join(run_dir, "results_payload.json"), "w", encoding="utf-8") as f:
@@ -611,16 +657,16 @@ def load_payload():
     rows = payload.get("rows") or []
     if rows:
         df = pd.DataFrame(rows)
-        with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
-            pickle.dump(df, f)
-            payload["rows"] = rows[:50]
+        with open(os.path.join(run_dir, "df.json"), "w", encoding="utf-8") as f:
+            df.to_json(f, orient="records")
+        payload["rows"] = rows[:50]
         payload["total"] = len(rows)
     else:
         payload["rows"] = []
         payload["total"] = 0
     best = payload.get("best") or {}
-    with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
-        pickle.dump(best, f)
+    with open(os.path.join(run_dir, "best.json"), "w", encoding="utf-8") as f:
+        json.dump(to_jsonable(best), f)
     meta = {
         "variabili": payload.get("variabili", []),
         "colonne_errori": payload.get("colonne_errori", []),
@@ -654,6 +700,8 @@ def load_payload():
 
 @app.route("/api/run/<run_id>/graph_inputs")
 def api_graph_inputs(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
     path = os.path.join(run_dir, "graph_inputs.json")
     if not os.path.exists(path):
@@ -676,16 +724,17 @@ def plot_full(kind, run_id):
 
 @app.route("/api/run/<run_id>/scatter")
 def api_scatter(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     x = request.args.get("x")
     y = request.args.get("y")
     c = request.args.get("c")
     limit = int(request.args.get("limit", "10000"))
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
-    pkl = os.path.join(run_dir, "df.pkl")
-    if not os.path.exists(pkl):
+    json_path = os.path.join(run_dir, "df.json")
+    if not os.path.exists(json_path):
         return jsonify({"error": "run non trovato"}), 404
-    with open(pkl, "rb") as f:
-        df = pickle.load(f)
+    df = pd.read_json(json_path)
     if x not in df.columns or y not in df.columns or c not in df.columns:
         return jsonify({"error": "colonna non trovata"}), 400
     df2 = df[[x, y, c]].dropna().head(limit)
@@ -707,10 +756,10 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 
         run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
         os.makedirs(run_dir, exist_ok=True)
-        with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
-            pickle.dump(df_validi, f)
-        with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
-            pickle.dump(riga_minima, f)
+        with open(os.path.join(run_dir, "df.json"), "w", encoding="utf-8") as f:
+            df_validi.to_json(f, orient="records")
+        with open(os.path.join(run_dir, "best.json"), "w", encoding="utf-8") as f:
+            json.dump(to_jsonable(riga_minima.to_dict()), f)
         with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
             json.dump({
                 "variabili": variabili,
@@ -886,32 +935,42 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
         PROGRESS[key] = { **PROGRESS.get(key, {}), "error": str(e), "done": True }
 
 
-@app.route("/start", methods=["POST"]) 
+@app.route("/start", methods=["POST"])
 def start_async():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
-    cleanup_uploads()
+    run_id = str(uuid.uuid4())
+    cleanup_uploads(keep_run_id=run_id)
+    run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
+    os.makedirs(run_dir, exist_ok=True)
 
     input_mode = request.form.get("input_mode", "upload")
     if input_mode == "manual":
         try:
-            dati_path, targets_path = _build_manual_files_from_form(request.form)
+            dati_tmp, targets_tmp = _build_manual_files_from_form(request.form)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        dati_path = os.path.join(run_dir, "dati.txt")
+        targets_path = os.path.join(run_dir, "targets.txt")
+        shutil.move(dati_tmp, dati_path)
+        shutil.move(targets_tmp, targets_path)
     else:
         # Richiede upload dei file
         dati_file = request.files.get("dati_file")
         targets_file = request.files.get("targets_file")
         if not dati_file or not targets_file or not dati_file.filename or not targets_file.filename:
             return jsonify({"error": "Carica sia dati.txt che targets.txt."}), 400
-        dati_name = secure_filename(dati_file.filename) or "dati.txt"
-        targets_name = secure_filename(targets_file.filename) or "targets.txt"
-        dati_path = os.path.join(UPLOAD_DIR, f"upload_{uuid.uuid4()}_{dati_name}")
-        targets_path = os.path.join(UPLOAD_DIR, f"upload_{uuid.uuid4()}_{targets_name}")
+        dati_name = secure_filename(dati_file.filename)
+        targets_name = secure_filename(targets_file.filename)
+        if not dati_name or os.path.splitext(dati_name)[1].lower() not in ALLOWED_UPLOADS:
+            return jsonify({"error": "Formato dati non consentito"}), 400
+        if not targets_name or os.path.splitext(targets_name)[1].lower() not in ALLOWED_UPLOADS:
+            return jsonify({"error": "Formato targets non consentito"}), 400
+        dati_path = os.path.join(run_dir, "dati.txt")
+        targets_path = os.path.join(run_dir, "targets.txt")
         dati_file.save(dati_path)
         targets_file.save(targets_path)
 
-    run_id = str(uuid.uuid4())
     PROGRESS[run_id] = {"current": 0, "total": 0, "started": time.time(), "eta_seconds": None, "done": False}
 
     th = threading.Thread(target=_background_run, args=(run_id, dati_path, targets_path, override_N), daemon=True)
@@ -922,6 +981,8 @@ def start_async():
 
 @app.route("/api/progress/<run_id>")
 def api_progress(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     info = PROGRESS.get(run_id)
     if not info:
         return jsonify({"error": "run non trovato"}), 404
@@ -930,6 +991,8 @@ def api_progress(run_id):
 
 @app.route("/api/esplora_progress/<run_id>")
 def api_esplora_progress(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     info = PROGRESS_EXPLORA.get(run_id)
     if not info:
         return jsonify({"error": "run non trovato"}), 404
@@ -939,15 +1002,17 @@ def api_esplora_progress(run_id):
 @app.route("/result/<run_id>")
 def result(run_id):
     # Ricostruisce la pagina risultati da file salvati
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     run_dir = os.path.join(UPLOAD_DIR, f"run_{run_id}")
-    pkl_df = os.path.join(run_dir, "df.pkl")
-    pkl_best = os.path.join(run_dir, "best.pkl")
+    json_df = os.path.join(run_dir, "df.json")
+    json_best = os.path.join(run_dir, "best.json")
     meta_path = os.path.join(run_dir, "meta.json")
     gi_path = os.path.join(run_dir, "graph_inputs.json")
-    if not (os.path.exists(pkl_df) and os.path.exists(pkl_best) and os.path.exists(meta_path) and os.path.exists(gi_path)):
+    if not (os.path.exists(json_df) and os.path.exists(json_best) and os.path.exists(meta_path) and os.path.exists(gi_path)):
         return jsonify({"error": "risultati non pronti"}), 404
-    with open(pkl_best, "rb") as f:
-        riga_minima = pickle.load(f)
+    with open(json_best, "r", encoding="utf-8") as f:
+        riga_minima = json.load(f)
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
     with open(gi_path, "r", encoding="utf-8") as f:
@@ -1079,6 +1144,8 @@ def _model_montecarlo(parametri_modificati: dict, targets: dict, N: int = 1000):
 
 @app.route("/api/esplora/<run_id>", methods=["POST"])
 def api_esplora(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     # Parametri di input
     body = request.get_json(silent=True) or {}
     metric = body.get("metrica")
@@ -1355,6 +1422,8 @@ def api_esplora(run_id):
 
 @app.route("/api/esplora_cancel/<run_id>", methods=["POST"])
 def api_esplora_cancel(run_id):
+    if not _valid_run_id(run_id):
+        return jsonify({"error": "run non trovato"}), 404
     if run_id not in PROGRESS_EXPLORA:
         PROGRESS_EXPLORA[run_id] = {"cancel": True}
     else:

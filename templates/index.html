@@ -93,6 +93,7 @@
     {% endwith %}
     <div class="card" style="margin-bottom:1rem;">
       <form action="{{ url_for('load_payload') }}" method="post" enctype="multipart/form-data" target="_blank">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="row">
           <strong style="display:block; margin-bottom: 0.5rem;">Upload di una simulazione salvata in locale</strong>
           <label for="payload_file">carica un file di salvataggio .json</label>
@@ -106,6 +107,7 @@
 
     <div class="card">
       <form id="mcForm" action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <div class="row">
           <strong style="display:block; margin-bottom: 0.5rem;">Esegui una nuova simulazione</strong>
           <label><input type="radio" name="input_mode" value="manual" checked> Inserimento manuale</label>
