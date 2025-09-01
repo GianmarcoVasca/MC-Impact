@@ -21,9 +21,15 @@
       .brand img { width:auto; display:block; margin:0; }
       .brand img:last-child { max-height: 140px; }
       #brandLogo { max-height: 70px; }
+      img { max-width:100%; height:auto; }
       #controls { display:flex; gap:8px; align-items:center; }
       #plot { flex: 1; }
       header span { display:none; }
+      @media (max-width: 600px) {
+        header { flex-direction: column; }
+        #controls { flex-direction: column; width:100%; }
+        .brand { flex-direction: column; }
+      }
     </style>
   </head>
   <body>

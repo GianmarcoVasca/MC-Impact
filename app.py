@@ -8,6 +8,7 @@ import time
 import threading
 import shutil
 from concurrent.futures import ProcessPoolExecutor
+from functools import wraps
 
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
@@ -37,6 +38,30 @@ app.secret_key = secret
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
+
+RUN_TOKEN = os.environ.get("RUN_TOKEN")
+
+
+def _check_token(req):
+    if not RUN_TOKEN:
+        return True
+    token = (
+        req.headers.get("X-API-KEY")
+        or req.args.get("token")
+        or req.form.get("token")
+    )
+    return token == RUN_TOKEN
+
+
+def require_token(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not _check_token(request):
+            return jsonify({"error": "unauthorized"}), 401
+        return fn(*args, **kwargs)
+
+    return wrapper
+
 
 ALLOWED_UPLOADS = {".txt"}
 ALLOWED_PAYLOAD = {".json"}
@@ -387,6 +412,7 @@ def favicon_jpg():
     return send_from_directory(path, "favicon.jpg", as_attachment=False, mimetype="image/jpeg")
 
 @app.route("/api/cancel/<run_id>", methods=["POST"])
+@require_token
 def api_cancel(run_id):
     if not _valid_run_id(run_id) or run_id not in PROGRESS:
         return jsonify({"error": "run non trovato"}), 404
@@ -395,6 +421,8 @@ def api_cancel(run_id):
 
 
 @app.route("/run", methods=["POST"])
+@require_token
+@limiter.limit("5 per minute")
 def run():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and override_N.isdigit()) else None
@@ -607,7 +635,7 @@ def run():
         "run_id": run_id,
         "variabili": variabili,
         "colonne_errori": colonne_errori,
-        "graph_inputs": json.dumps(to_jsonable(graph_inputs)),
+        "graph_inputs": to_jsonable(graph_inputs),
         "units": UNITS,
         "expandable_vars": expandable_vars,
         "used_params": used_params,
@@ -707,6 +735,7 @@ def load_payload():
             graph_inputs = {}
     with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as f:
         json.dump(graph_inputs, f)
+    payload["graph_inputs"] = graph_inputs
 
         # Override availability of exportable files when loading a payload.
     # The original payload might have been saved when risultati.txt and
@@ -723,6 +752,7 @@ def load_payload():
 
 
 @app.route("/api/run/<run_id>/graph_inputs")
+@require_token
 def api_graph_inputs(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
@@ -747,6 +777,7 @@ def plot_full(kind, run_id):
 
 
 @app.route("/api/run/<run_id>/scatter")
+@require_token
 def api_scatter(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
@@ -933,7 +964,7 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
             "run_id": run_id,
             "variabili": variabili,
             "colonne_errori": colonne_errori,
-            "graph_inputs": json.dumps(to_jsonable(graph_inputs)),
+            "graph_inputs": to_jsonable(graph_inputs),
             "units": UNITS,
             "expandable_vars": expandable_vars,
             "used_params": used_params,
@@ -960,6 +991,7 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 
 
 @app.route("/start", methods=["POST"])
+@require_token
 def start_async():
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
@@ -1013,6 +1045,7 @@ def start_async():
 
 
 @app.route("/api/progress/<run_id>")
+@require_token
 def api_progress(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
@@ -1023,6 +1056,7 @@ def api_progress(run_id):
 
 
 @app.route("/api/esplora_progress/<run_id>")
+@require_token
 def api_esplora_progress(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
@@ -1107,7 +1141,7 @@ def result(run_id):
         run_id=run_id,
         variabili=meta.get("variabili", []),
         colonne_errori=meta.get("colonne_errori", []),
-        graph_inputs=json.dumps(to_jsonable(graph_inputs)),
+        graph_inputs=to_jsonable(graph_inputs),
         units=UNITS,
         expandable_vars=expandable_vars,
         used_params=used_params,
@@ -1176,6 +1210,7 @@ def _model_montecarlo(parametri_modificati: dict, targets: dict, N: int = 1000):
 
 
 @app.route("/api/esplora/<run_id>", methods=["POST"])
+@require_token
 def api_esplora(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
@@ -1454,6 +1489,7 @@ def api_esplora(run_id):
 
 
 @app.route("/api/esplora_cancel/<run_id>", methods=["POST"])
+@require_token
 def api_esplora_cancel(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404

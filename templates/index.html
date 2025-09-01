@@ -44,6 +44,7 @@
       .brand img { width:auto; display:block; }
       .brand img:last-child { max-height: 140px; }
       #brandLogo { max-height: 70px; }
+      img { max-width:100%; height:auto; }
       .flash { padding: .75rem; margin-bottom: 1rem; border-radius: 6px; }
       .flash.error { background: #fee; color: #900; border: 1px solid #f99; }
       .progress { margin-top: 1rem; background: #f1f3f5; border-radius: 8px; height: 18px; overflow: hidden; display:none; }
@@ -68,12 +69,21 @@
         display: grid; 
         row-gap: .75rem;               /* più spazio tra le voci */
       }
-      .adv-block .indent label { 
-        display: grid; 
-        grid-template-columns: 240px 100px; 
+      .adv-block .indent label {
+        display: grid;
+        grid-template-columns: 240px 100px;
         align-items: center; 
       }
       .adv-block .title { display:block; margin:.5rem 0 1rem 0; font-weight:bold; }
+      @media (max-width: 600px) {
+        body { margin: 1rem; }
+        .form-inline { flex-direction: column; align-items: stretch; }
+        .form-inline label { width: 100%; }
+        .form-inline input, .form-inline select, .form-inline .ctrl { width: 100% !important; }
+        .flags label { grid-template-columns: 1fr; }
+        .model-row { grid-template-columns: 1fr; }
+        .brand { flex-direction: column; }
+      }
     </style>
   </head>
   <body>
