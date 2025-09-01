@@ -541,9 +541,10 @@ def run():
         'stima_PDOF': _is_active(parametri, 'stima_PDOF'),
     }
 
+    rows_full = df_validi.to_dict(orient="records")
     payload = {
         "best": best,
-        "rows": [],
+        "rows": rows_full,
         "total": len(df_validi),
         "run_id": run_id,
         "variabili": variabili,
@@ -571,6 +572,8 @@ def run():
     with open(payload_path, "w", encoding="utf-8") as pf:
         json.dump(to_jsonable(payload), pf)
 
+    # Use only preview rows for immediate rendering
+    payload["rows"] = preview
     return render_template("results.html", **payload)
 
 
@@ -610,6 +613,11 @@ def load_payload():
         df = pd.DataFrame(rows)
         with open(os.path.join(run_dir, "df.pkl"), "wb") as f:
             pickle.dump(df, f)
+            payload["rows"] = rows[:50]
+        payload["total"] = len(rows)
+    else:
+        payload["rows"] = []
+        payload["total"] = 0
     best = payload.get("best") or {}
     with open(os.path.join(run_dir, "best.pkl"), "wb") as f:
         pickle.dump(best, f)
@@ -630,11 +638,15 @@ def load_payload():
     with open(os.path.join(run_dir, "graph_inputs.json"), "w", encoding="utf-8") as f:
         json.dump(graph_inputs, f)
 
-    files_available = payload.get("files_available") or {
-        "risultati.txt": False,
-        "listato.txt": False,
-        "results_payload.json": True,
-    }
+        # Override availability of exportable files when loading a payload.
+    # The original payload might have been saved when risultati.txt and
+    # listato.txt were present, but after uploading a payload we don't have
+    # those text files on disk. Force these buttons to stay hidden.
+    files_available = payload.get("files_available") or {}
+    files_available["risultati.txt"] = False
+    files_available["listato.txt"] = False
+    files_available["results_payload.json"] = True
+    
     payload["files_available"] = files_available
     payload["run_id"] = run_id
     return render_template("results.html", **payload)
@@ -839,9 +851,11 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
             'stima_PDOF': _is_active(parametri, 'stima_PDOF'),
         }
 
+        rows_full = df_validi.to_dict(orient="records")
+
         payload = {
             "best": best,
-            "rows": [],
+            "rows": rows_full,
             "total": len(df_validi),
             "run_id": run_id,
             "variabili": variabili,
@@ -1476,9 +1490,9 @@ def _build_manual_files_from_form(form) -> tuple[str, str]:
 
     # Require at least some content in both files
     if not dati_lines:
-        raise ValueError("Inserisci almeno un parametro in dati (es. N).")
+        raise ValueError("Inserisci tutti i parametri necessari.")
     if not target_lines:
-        raise ValueError("Inserisci almeno un parametro in targets.")
+        raise ValueError("Inserisci tutti i parametri necessari.")
 
     # Write to unique files
     run_id = uuid.uuid4().hex

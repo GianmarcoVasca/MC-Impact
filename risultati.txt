@@ -1,35 +1,35 @@
 Combinazione con errore medio più basso:
 
-x1             = 	     -1.27
-y1             = 	     -0.91
-x2             = 	      0.98
-y2             = 	      0.72
+x1             = 	      -1.2
+y1             = 	      -1.0
+x2             = 	       0.9
+y2             = 	       0.7
 
-theta1_in      = 	    355.89
-theta1_out     = 	    329.39
-theta2_in      = 	    160.66
-theta2_out     = 	     106.5
+theta1_in      = 	     345.8
+theta1_out     = 	     290.0
+theta2_in      = 	    191.58
+theta2_out     = 	      20.0
 
-V1_post        = 	     22.22
-V2_post        = 	      21.1
-V1_pre         = 	     49.73
-V2_pre         = 	      38.1
+V1_post        = 	     29.95
+V2_post        = 	     22.77
+V1_pre         = 	     60.32
+V2_pre         = 	     26.55
 
-omega1_post    = 	      3.45
-omega2_post    = 	      2.97
+omega1_post    = 	      3.19
+omega2_post    = 	      2.68
 omega1_pre     = 	       0.0
 omega2_pre     = 	       0.0
 
-Ed             = 	 125141.69
-PDOF_stima     = 	     14.26
-f1             = 	       0.5
-f2             = 	       0.7
+Ed             = 	 124917.06
+PDOF_stima     = 	     15.47
+f1             = 	      0.55
+f2             = 	      0.66
 
 J1             = 	   1974.79
 J2             = 	    1877.8
-d_post1        = 	       5.4
-cicloide1      = 	       5.8
+d_post1        = 	       8.0
+cicloide1      = 	       7.9
 
-d_post2        = 	      3.24
-cicloide2      = 	      3.45
+d_post2        = 	       4.0
+cicloide2      = 	       3.9
 Ed_target      = 	 124202.15
