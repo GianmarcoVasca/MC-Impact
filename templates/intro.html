@@ -52,29 +52,32 @@
   <body>
     <img class="logo" src="{{ url_for('logo') }}" alt="Logo MC-Impact" />
     <div class="content">
-      <p class="center">MC-Impact è uno strumento avanzato per la ricostruzione automatizzata di collisioni tra veicoli.</p>
-      <p class="center">Permette di esplorare in pochi secondi più soluzioni coerenti con i dati osservati, variando in modo flessibile i parametri incerti con metodo computazionale di classe Monte Carlo.</p>
-      <p class="center">Supporta modelli a 2 e 3 gradi di libertà, analisi statistica dei dati, chiusura dei triangoli di velocità, stima grafica della PDOF, integrazione con modelli di analisi del post-urto, calcolo energetico con EES.</p>
+      <p style="font-size: 17px; font-weight: bold;" class="center">MC-Impact è un algoritmo di calcolo avanzato per la ricostruzione cinematica di collisioni tra veicoli basato su un modello matematico impulsivo.</p>
+      <p style="font-size: 16px;" class="center">Permette di esplorare in pochi secondi più soluzioni coerenti con i dati osservati, con la possibilità di variare in modo flessibile i parametri incerti con metodo computazionale di classe MonteCarlo.</p>
 
-      <p>Cosa puoi fare con MC-Impact:</p>
+      <p style="font-size: 15px; font-weight: bold;">Cosa puoi fare con MC-Impact:</p>
       <ul>
-        <li>Trovare una soluzione coerente in pochi secondi;</li>
         <li>Selezionare in modo flessibile quali parametri far variare;</li>
-        <li>Individuare valori consistenti della soluzione tramite analisi statistica semplice;</li>
+        <li>Trovare una soluzione coerente con i vincoli in pochi secondi, sia a 2 che a 3 gradi di libertà;</li>
+        <li>Visualizzare graficamente i vettori di ingresso/uscita urto;</li>
+        <li>Visualizzare graficamente la mesh MonteCarlo utilizzata in modo interattivo;</li>
         <li>Esplorare soluzioni alternative mediante analisi statistica avanzata;</li>
-        <li>Integrare opzionalmente il calcolo dei post-urti ed il calcolo energetico con EES;</li>
-        <li>Calcolare analiticamente le traiettorie post-urto;</li>
-        <li>Stimare graficamente la PDOF sulla base dei post-urti;</li>
-        <li>Affinare la soluzione attraverso la chiusura automatica dei triangoli di velocità;</li>
-        <li>Stimare il coefficiente di restituzione lungo la direzione ortogonale al piano di impatto;</li>
-        <li>Effettuare tutti i calcoli sia a 2 che a 3 gradi di libertà, in modo flessibile e completamente automatico.</li>
       </ul>
 
-      <p>Perché scegliere MC-Impact:</p>
+      <p style="font-size: 15px; font-weight: bold;">Strumenti di analisi avanzati:</p>
+      <ul>
+        <li>Ottimizzazione del calcolo per la stima della PDOF;</li>
+        <li>Visualizzazione in diagramma polare del cono di validità della PDOF;</li>
+        <li>Calcolo analitico delle traiettorie post-urto mediante l'integrale curvilineo;</li>
+        <li>Algoritmo di chiusura automatica dei triangoli di velocità con rappresentazione grafica vettoriale;</li>
+        <li>Stima del coefficiente di restituzione lungo la direzione ortogonale al piano di impatto;</li>
+      </ul>
+
+      <p style="font-size: 15px; font-weight: bold;">Perché scegliere MC-Impact:</p>
       <ul>
         <li>Semplice e immediato: soluzione "Plug and play", utilizzo intuitivo, interfaccia chiara, nessun corso di formazione o workshop richiesti;</li>
         <li>Veloce: trova soluzioni dinamicamente consistenti in pochi secondi;</li>
-        <li>Nessuna installazione: funziona interamente online via browser, da qualsiasi dispositivo, anche mobile;</li>
+        <li>Nessuna installazione: funziona interamente online via browser;</li>
         <li>Nessuna manutenzione: non servono aggiornamenti manuali o assistenza tecnica, il software è sempre aggiornato all’ultima versione.</li>
       </ul>
     </div>

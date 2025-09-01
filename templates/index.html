@@ -14,7 +14,7 @@
         background: var(--brand-bg); /* Sfondo fisso */
         color: var(--brand-text);
       }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin: 0 auto; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 975px; margin: 0 auto; }
       h1 { text-align:center; }
       .row { margin-bottom: 0.75rem; }
       .section { margin-top: 1.25rem; padding-top: .25rem; }
@@ -57,6 +57,23 @@
       .target-col input{ width:98px; }
       .vals { display:grid; grid-template-columns: 65px 65px; gap:.25rem; }
       .vals input { width: 65px; }
+      .flags label { margin-right: .75rem; }
+      /* più spazio tra cicloide ed energia_EES */
+      .flags .sep-top { margin-top: .5rem; }
+      /* “Opzioni avanzate” sempre più distanziato dal resto */
+      .adv-block { margin-top: .75rem; margin-bottom: 1rem; }
+      /* spaziatura interna sotto “Opzioni avanzate” */
+      .adv-block .indent { 
+        margin-left: 0rem; 
+        display: grid; 
+        row-gap: .75rem;               /* più spazio tra le voci */
+      }
+      .adv-block .indent label { 
+        display: grid; 
+        grid-template-columns: 240px 100px; 
+        align-items: center; 
+      }
+      .adv-block .title { display:block; margin:.5rem 0 1rem 0; font-weight:bold; }
     </style>
   </head>
   <body>
@@ -75,9 +92,10 @@
       {% endif %}
     {% endwith %}
     <div class="card" style="margin-bottom:1rem;">
-      <form action="{{ url_for('load_payload') }}" method="post" enctype="multipart/form-data">
+      <form action="{{ url_for('load_payload') }}" method="post" enctype="multipart/form-data" target="_blank">
         <div class="row">
-          <label for="payload_file">Carica un file di salvataggio .json</label>
+          <strong style="display:block; margin-bottom: 0.5rem;">Upload di una simulazione salvata in locale</strong>
+          <label for="payload_file">carica un file di salvataggio .json</label>
           <input type="file" id="payload_file" name="payload_file" accept=".json" />
         </div>
         <div class="actions">
@@ -89,9 +107,9 @@
     <div class="card">
       <form id="mcForm" action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
         <div class="row">
-          <strong>Sorgente input</strong>
-          <label><input type="radio" name="input_mode" value="upload" checked> Carica file .txt</label>
-          <label><input type="radio" name="input_mode" value="manual"> Inserimento manuale</label>
+          <strong style="display:block; margin-bottom: 0.5rem;">Esegui una nuova simulazione</strong>
+          <label><input type="radio" name="input_mode" value="manual" checked> Inserimento manuale</label>
+          <label><input type="radio" name="input_mode" value="upload"> Inserimento automatico (carica file .txt)</label>
         </div>
 
         <div id="section-upload">
@@ -111,42 +129,105 @@
 
         <div id="section-manual" style="display:none;">
           <div class="row"><strong>Parametri simulazione:</strong></div>
+
           <div class="row form-inline">
             <label for="man_N">N (iterazioni)</label>
             <input class="ctrl" type="number" id="man_N" name="man_N" min="1" step="1" placeholder="Es. 100000" />
           </div>
+
           <div class="row form-inline">
             <label for="man_gdl">Gradi di Libertà</label>
             <select class="ctrl" id="man_gdl" name="man_gdl">
               <option value="">—</option>
-              <option value="2">2</option>
+              <option value="2" selected>2</option>
               <option value="3">3</option>
             </select>
           </div>
+
           <div class="row">
-            <!-- flags -->
-            <!-- <div class="hint">Scegli "attivo" o "non attivo"</div> -->
             <div class="flags">
+              <!-- ordine: cicloide -> energia_EES -->
               <label>cicloide
-                <select name="man_cicloide"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+                <select name="man_cicloide" id="sel_cicloide">
+                  <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                </select>
               </label>
-              <label>cicloide_avanzata
-                <select name="man_cicloide_avanzata"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
+
+              <label class="sep-top">energia_EES
+                <select name="man_energia_EES">
+                  <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                </select>
               </label>
-              <label>cicloide_nota
-                <select name="man_cicloide_nota"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
-              </label>
-              <label>energia_EES
-                <select name="man_energia_EES"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
-              </label>
-              <label>stima_PDOF
-                <select name="man_stima_PDOF"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
-              </label>
-              <label>chiusura_triangoli
-                <select name="man_chiusura_triangoli"><option value="">—</option><option value="1">attivo</option><option value="0">non attivo</option></select>
-              </label>
+
+              <!-- Opzioni avanzate -->
+              <div class="adv-block" id="advOptions">
+                <span class="title">Opzioni avanzate:</span>
+                <div class="indent">
+                  <label id="lbl_cicloide_av">cicloide_avanzata
+                    <select name="man_cicloide_avanzata" id="sel_cicloide_av">
+                      <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                    </select>
+                  </label>
+
+                  <label id="lbl_cicloide_nota">cicloide_nota
+                    <select name="man_cicloide_nota" id="sel_cicloide_nota">
+                      <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                    </select>
+                  </label>
+
+                  <label>stima_PDOF
+                    <select name="man_stima_PDOF">
+                      <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                    </select>
+                  </label>
+
+                  <label>chiusura_triangoli
+                    <select name="man_chiusura_triangoli">
+                      <option value="">—</option><option value="1">attivo</option><option value="0" selected>non attivo</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
+
+          <!-- JS -->
+          <script>
+            function updateAdvancedVisibility() {
+              const isCicloide = document.getElementById('sel_cicloide').value === '1';
+              const lblAv   = document.getElementById('lbl_cicloide_av');
+              const lblNota = document.getElementById('lbl_cicloide_nota');
+              const selAv   = document.getElementById('sel_cicloide_av');
+              const selNota = document.getElementById('sel_cicloide_nota');
+
+              // mostra/nascondi SOLO i due campi legati a cicloide
+              [lblAv, lblNota].forEach(el => el.style.display = isCicloide ? 'grid' : 'none');
+
+              // abilita/disabilita e reset valori quando necessario
+              [selAv, selNota].forEach(sel => {
+                sel.disabled = !isCicloide;
+                if (!isCicloide) sel.value = '';
+              });
+            }
+
+            function enforceMutualExclusion(e) {
+              const selAv = document.getElementById('sel_cicloide_av');
+              const selNota = document.getElementById('sel_cicloide_nota');
+              if (e.target === selAv && selAv.value === '1') selNota.value = '0';
+              if (e.target === selNota && selNota.value === '1') selAv.value = '0';
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+              // inizializza stato
+              updateAdvancedVisibility();
+
+              // listeners
+              document.getElementById('sel_cicloide').addEventListener('change', updateAdvancedVisibility);
+              document.getElementById('sel_cicloide_av').addEventListener('change', enforceMutualExclusion);
+              document.getElementById('sel_cicloide_nota').addEventListener('change', enforceMutualExclusion);
+            });
+          </script>
+
 
           <div class="row section"><strong>Parametri modello:</strong></div>
           <div id="datiRows">
@@ -168,12 +249,16 @@
             <div class="row section"><strong>- ANGOLI DI INGRESSO E USCITA -</strong></div>
             <div id="sec_angles"></div>
 
-            <div class="row section"><strong>- COORDINATE BARICENTRICHE -</strong> <span class="hint">Se gdl=2 e chiusura_triangoli=0, cicloide_avanzata=0, stima_PDOF=0 non vengono richieste (default ±2)</span></div>
+            <div id="row_coords" class="row section"><strong>- COORDINATE BARICENTRICHE -</strong></div>
             <div id="sec_coords"></div>
+
           </div>
 
-          <div class="row" style="margin-top:1rem;"><strong>Parametri target:</strong></div>
+          <div id="row_targets" class="row" style="margin-top:2rem;">
+            <strong>Altri parametri target:</strong>
+          </div>
           <div id="targetRows"></div>
+
         </div>
 
         <!-- Rimosso: Override di N iterazioni -->
@@ -319,50 +404,64 @@
       fixedField('sec_coords','y2','Y baricentro (veicolo 2)','m', true);
 
       function toggleSections(){
-        const get = n=>document.querySelector(`[name='man_${n}']`)?.value||'';
-        const C = get('cicloide');
+        const get = n => document.querySelector(`[name='man_${n}']`)?.value || '';
+        const C  = get('cicloide');
         const CA = get('cicloide_avanzata');
         const CN = get('cicloide_nota');
         const EE = get('energia_EES');
         const ST = get('stima_PDOF');
         const CT = get('chiusura_triangoli');
-        const G = document.getElementById('man_gdl')?.value||'';
-        document.getElementById('sec_post_cicloide').style.display = (C==='1') ? 'block':'none';
-        document.getElementById('sec_post_cicloide_av').style.display = (CA==='1') ? 'block':'none';
-        document.getElementById('sec_post_nocicloide').style.display = (C==='0') ? 'block':'none';
+        const G  = document.getElementById('man_gdl')?.value || '';
+
+        const show = el => { if (el) el.style.display = '';   };
+        const hide = el => { if (el) el.style.display = 'none';};
+
+        // visibilità blocchi post-urto / energia
+        document.getElementById('sec_post_cicloide').style.display      = (C==='1')  ? 'block':'none';
+        document.getElementById('sec_post_cicloide_av').style.display   = (CA==='1') ? 'block':'none';
+        document.getElementById('sec_post_nocicloide').style.display    = (C==='0')  ? 'block':'none';
         document.getElementById('sec_post_cicloide_nota').style.display = (CN==='1') ? 'block':'none';
-        document.getElementById('sec_energy_ees').style.display = (EE==='1') ? 'block':'none';
-        document.getElementById('sec_energy_ed').style.display = (EE==='0') ? 'block':'none';
+        document.getElementById('sec_energy_ees').style.display         = (EE==='1') ? 'block':'none';
+        document.getElementById('sec_energy_ed').style.display          = (EE==='0') ? 'block':'none';
+
+        // coordinate baricentriche: nascondi anche il titolo
         const hideCoords = (G==='2' && CT!=='1' && CA!=='1' && ST!=='1');
-        document.getElementById('sec_coords').style.display = hideCoords ? 'none':'block';
-        // Target visibility rules
-        const needCoordsTarget = (G==='3' || CT==='1' || ST==='1');
-        // toggle target column for coordinates
-        document.querySelectorAll('#sec_coords .target-col').forEach(el=>{
-          // Coordinates targets only if needCoordsTarget
-          el.style.display = needCoordsTarget ? '' : 'none';
-        });
-        // omega targets visibility (gdl=3) and PDOF target visibility
-        const omegaBlk = document.getElementById('tgt_omega');
-        if (omegaBlk) omegaBlk.style.display = (G==='3') ? 'block' : 'none';
-        const pdofBlk = document.getElementById('tgt_pdof');
-        const showPDOF = (CT==='1' || G==='3' || ST==='1');
-        if (pdofBlk) pdofBlk.style.display = showPDOF ? 'block' : 'none';
+        const secCoords  = document.getElementById('sec_coords');
+        const rowCoords  = document.getElementById('row_coords');
+        if (secCoords) secCoords.style.display = hideCoords ? 'none' : 'block';
+        if (rowCoords) rowCoords.style.display = hideCoords ? 'none' : 'block';
+
+        // ====== TARGETS ======
+        const rowTargets  = document.getElementById('row_targets'); // titolo "Altri parametri target:"
+        const targetRows  = document.getElementById('targetRows');  // contenitore dei blocchi
+        const pdofBlk     = document.getElementById('tgt_pdof');    // blocco PDOF
+        const omegaBlk    = document.getElementById('tgt_omega');   // blocco ω (solo gdl=3)
+
+        // condizione "almeno una vera"
+        const showAnyTarget = (CT === '1' || G === '3' || ST === '1');
+
+        // titolo: visibile SOLO se showAnyTarget
+        showAnyTarget ? show(rowTargets) : hide(rowTargets);
+
+        // contenitore complessivo: visibile SOLO se showAnyTarget
+        showAnyTarget ? show(targetRows) : hide(targetRows);
+
+        // blocchi interni
+        // ω: solo se gdl=3
+        (G === '3') ? show(omegaBlk) : hide(omegaBlk);
+
+        // PDOF: se almeno una condizione vera (stessa condizione del titolo)
+        showAnyTarget ? show(pdofBlk) : hide(pdofBlk);
       }
-      // Rimuove l'hint testuale nella sezione coordinate, se presente
-      (function(){
-        const sections = document.querySelectorAll('.row.section');
-        sections.forEach(s=>{
-          if (s.textContent && s.textContent.includes('COORDINATE BARICENTRICHE')){
-            const hint = s.querySelector('.hint'); if (hint) hint.remove();
-          }
-        });
-      })();
+      
+      // bind eventi (lascia uguale)
       ['man_cicloide','man_cicloide_avanzata','man_cicloide_nota','man_energia_EES','man_stima_PDOF','man_chiusura_triangoli','man_gdl'].forEach(id=>{
         const el = document.getElementsByName(id)[0] || document.getElementById(id);
         if (el) el.addEventListener('change', toggleSections);
+
       });
       toggleSections();
+
 
       // Sezione targets fissi (in fondo)
       (function(){

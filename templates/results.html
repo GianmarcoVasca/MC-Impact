@@ -10,7 +10,19 @@
     <style>
       :root { --brand-bg:#fefefe; --brand-text:#000000; --brand-accent:#2c7be5; }
       body { font-family: system-ui, Arial, sans-serif; margin: 2rem; background: var(--brand-bg); color: #000 !important; }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+      /* una sola regola .grid */
+      .grid{
+        display:flex;
+        justify-content:center;  /* centra il gruppo */
+        gap:2rem;                /* spazio tra le due */
+        flex-wrap:wrap;          /* responsivo */
+      }
+
+      /* annulla gli auto-margin sulle card figlie */
+      .grid .card{
+        margin:0;                /* <— importante */
+        flex:0 1 550px;          /* larghezza desiderata delle card */
+      }
       .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; max-width: 1100px; margin-left:auto; margin-right:auto; }
       table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
       th, td { border-bottom: 1px solid #eee; padding: 0.4rem; text-align: left; }
@@ -42,7 +54,7 @@
     <h1 style="text-align:center;">Risultati MonteCarlo</h1>
 
     <div class="grid">
-      <div class="card">
+      <div class="card" style="margin-top:1rem; max-width:550px;">
         <h2>Migliore combinazione</h2>
         <div class="kv">
           {% for k, v in best.items() %}
@@ -53,7 +65,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-top:1rem; max-width:550px;">
         <h2>Parametri usati</h2>
         <div class="kv">
           {% for section, items in used_params_grouped %}
@@ -68,22 +80,23 @@
       </div>
     </div>
 
-    <!-- Opzioni sempre visibile -->
-    <div class="card" style="margin-top:1rem;">
+    <div class="card" style="margin-top:1rem; max-width:250px;">
       <h2>Opzioni</h2>
-      <div class="actions" style="display:flex; flex-direction:column; gap:.5rem; align-items:flex-start;">
+      <div class="actions" 
+          style="display:flex; flex-direction:column; gap:.5rem; align-items:flex-start; width:100%;">
         {% if files_available['risultati.txt'] %}
-          <a class="btn" href="{{ url_for('download', filename='risultati.txt') }}">risultati.txt</a>
+          <a class="btn" href="{{ url_for('download', filename='risultati.txt') }}">Esporta risultati.txt</a>
         {% endif %}
         {% if files_available['listato.txt'] %}
-          <a class="btn" href="{{ url_for('download', filename='listato.txt') }}">listato.txt</a>
+          <a class="btn" href="{{ url_for('download', filename='listato.txt') }}">Esporta listato.txt</a>
         {% endif %}
         {% if files_available['results_payload.json'] %}
-          <a class="btn" href="{{ url_for('download_payload', run_id=run_id) }}">Salva simulazione</a>
+          <a class="btn" href="{{ url_for('download_payload', run_id=run_id) }}">Esporta simulazione completa</a>
         {% endif %}
-        <a class="btn" style="background:#868e96;" href="{{ url_for('index') }}">Home</a>
+        <a class="btn" style="background:#868e96;" href="{{ url_for('index') }}">Torna alla Home</a>
       </div>
     </div>
+
 
     <!-- Grafico MonteCarlo interattivo sempre visibile -->
     <div class="card" style="margin-top:1rem;">
