@@ -7,6 +7,8 @@ import math
 import time
 import threading
 import shutil
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Manager
 
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
@@ -22,8 +24,17 @@ from funzioni.lettura_e_scrittura import (
 )
 from funzioni.operazioni import calcoli
 
+from multiprocessing import Manager, freeze_support
+
+def create_manager():
+    return Manager()
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24))
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    app.logger.critical("SECRET_KEY not set")
+    raise RuntimeError("SECRET_KEY not set")
+app.secret_key = secret_key
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
@@ -31,17 +42,22 @@ limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
 ALLOWED_UPLOADS = {".txt"}
 ALLOWED_PAYLOAD = {".json"}
 ALLOWED_DOWNLOADS = {"risultati.txt", "listato.txt"}
-MAX_ITERATIONS = 1000000
+MAX_ITERATIONS = int(os.environ.get("MAX_ITERATIONS", "700000"))
+SIMULATION_TIMEOUT = int(os.environ.get("SIMULATION_TIMEOUT", "60"))
+MAX_WORKERS = int(os.environ.get("SIM_WORKERS", "2"))
+MAX_QUEUE = int(os.environ.get("SIM_QUEUE", "4"))
 UPLOAD_TTL_SECONDS = 3600  # 1 hour
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "web_uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Stato di avanzamento delle esecuzioni asincrone
-PROGRESS: dict[str, dict] = {}
-# Stato avanzamento per la funzione "esplora" (per run_id)
-PROGRESS_EXPLORA: dict[str, dict] = {}
+manager = Manager()
+PROGRESS: dict[str, dict] = manager.dict()
+PROGRESS_EXPLORA: dict[str, dict] = manager.dict()
+EXECUTOR = ProcessPoolExecutor(max_workers=MAX_WORKERS)
+PENDING_FUTURES: dict[str, object] = {}
+PENDING_LOCK = threading.Lock()
 
 # Unita' di misura di base per alcune variabili note
 UNITS: dict[str, str] = {
@@ -204,7 +220,13 @@ def _group_used_params(formatted: dict[str, str]):
     return out
 
 
-def run_simulation(dati_path: str, targets_path: str, override_N: int | None = None, progress_key: str | None = None):
+def run_simulation(
+    dati_path: str,
+    targets_path: str,
+    override_N: int | None = None,
+    progress_key: str | None = None,
+    timeout_seconds: int = SIMULATION_TIMEOUT,
+):
     """Run the same Monte Carlo flow as main.py but without plots or prompts.
 
     Returns (df_validi, riga_minima) where df_validi is a pandas DataFrame
@@ -227,6 +249,8 @@ def run_simulation(dati_path: str, targets_path: str, override_N: int | None = N
 
     start_ts = time.time()
     for i in range(N):
+        if timeout_seconds and (time.time() - start_ts) > timeout_seconds:
+            raise TimeoutError("Tempo massimo di esecuzione superato")
         # Check for async cancellation
         if progress_key and PROGRESS.get(progress_key, {}).get("cancel"):
             PROGRESS[progress_key] = {**PROGRESS.get(progress_key, {}), "done": True, "canceled": True}
@@ -973,10 +997,19 @@ def start_async():
 
     PROGRESS[run_id] = {"current": 0, "total": 0, "started": time.time(), "eta_seconds": None, "done": False}
 
-    th = threading.Thread(target=_background_run, args=(run_id, dati_path, targets_path, override_N), daemon=True)
-    th.start()
+    with PENDING_LOCK:
+        if len(PENDING_FUTURES) >= MAX_QUEUE:
+            return jsonify({"error": "coda piena"}), 429
+        future = EXECUTOR.submit(_background_run, run_id, dati_path, targets_path, override_N)
+        PENDING_FUTURES[run_id] = future
 
-    return jsonify({"run_id": run_id, "status": "started"})
+    def _done_cb(fut, rid=run_id):
+        with PENDING_LOCK:
+            PENDING_FUTURES.pop(rid, None)
+
+    future.add_done_callback(_done_cb)
+
+    return jsonify({"run_id": run_id, "status": "queued"})
 
 
 @app.route("/api/progress/<run_id>")
@@ -1576,5 +1609,7 @@ def _build_manual_files_from_form(form) -> tuple[str, str]:
 
 
 if __name__ == "__main__":
-    # Debug server for local use
-    app.run(debug=True, port=5000)
+    freeze_support()
+    manager = create_manager()
+    cleanup_uploads()
+    app.run(debug=True)  # o False in produzione

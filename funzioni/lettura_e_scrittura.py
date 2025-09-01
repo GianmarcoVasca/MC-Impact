@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import numpy as np
 from datetime import datetime
+import json
 
 #leggere dati in input da file
 def leggi_range_da_file(percorso):
@@ -98,30 +99,43 @@ def scrivi_risultati_formattati(df, riga, nome_file="risultati.txt"):
 def salva_backup_versionato(risultati_validi, riga_minima, backup_dir="backup"):
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_validi = os.path.join(backup_dir, f"risultati_validi_{timestamp}.pkl")
-    file_minima = os.path.join(backup_dir, f"riga_minima_{timestamp}.pkl")
+    file_validi = os.path.join(backup_dir, f"risultati_validi_{timestamp}.json")
+    file_minima = os.path.join(backup_dir, f"riga_minima_{timestamp}.json")
 
-    with open(file_validi, "wb") as f:
-        pickle.dump(risultati_validi, f)
-    with open(file_minima, "wb") as f:
-        pickle.dump(riga_minima, f)
+    def _convert(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
+        if isinstance(obj, dict):
+            return {k: _convert(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_convert(v) for v in obj]
+        if isinstance(obj, pd.Series):
+            return {k: _convert(v) for k, v in obj.items()}
+        return obj
+
+    with open(file_validi, "w", encoding="utf-8") as f:
+        json.dump(_convert(risultati_validi), f, ensure_ascii=False, indent=2)
+    with open(file_minima, "w", encoding="utf-8") as f:
+        json.dump(_convert(riga_minima), f, ensure_ascii=False, indent=2)
 
     print(f"✅ Backup salvato in '{backup_dir}/' con timestamp {timestamp}")
 
 def carica_backup_da_cartella(backup_dir="backup"):
-    files = sorted([f for f in os.listdir(backup_dir) if f.endswith(".pkl")])
+    files = sorted([f for f in os.listdir(backup_dir) if f.endswith(".json")])
     if not files:
-        print(f"❌ Nessun file .pkl trovato nella cartella '{backup_dir}/'")
+        print(f"❌ Nessun file .json trovato nella cartella '{backup_dir}/'")
         return [], {}
 
     coppie = [(f1, f2) for f1 in files for f2 in files
               if f1.startswith("risultati_validi_") and f2.startswith("riga_minima_")
-              and f1[-19:] == f2[-19:]]
+              and f1[-20:] == f2[-20:]]
     if not coppie:
         print("⚠️  Nessuna coppia valida trovata.")
         return [], {}
 
-    coppie = sorted(coppie, key=lambda x: x[0][-19:], reverse=True)
+    coppie = sorted(coppie, key=lambda x: x[0][-20:], reverse=True)
 
     print(f"\n📂 Backup disponibili in '{backup_dir}/':")
     for idx, (f1, f2) in enumerate(coppie):
@@ -135,10 +149,10 @@ def carica_backup_da_cartella(backup_dir="backup"):
 
     file_validi, file_minima = coppie[int(scelta)]
 
-    with open(os.path.join(backup_dir, file_validi), "rb") as f:
-        risultati_validi = pickle.load(f)
-    with open(os.path.join(backup_dir, file_minima), "rb") as f:
-        riga_minima = pickle.load(f)
+    with open(os.path.join(backup_dir, file_validi), "r", encoding="utf-8") as f:
+        risultati_validi = json.load(f)
+    with open(os.path.join(backup_dir, file_minima), "r", encoding="utf-8") as f:
+        riga_minima = pd.Series(json.load(f))
 
     print(f"\n✅ Backup '{file_validi}' caricato correttamente.")
     return risultati_validi, riga_minima
