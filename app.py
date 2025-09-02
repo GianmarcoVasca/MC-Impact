@@ -35,9 +35,15 @@ secret = os.environ.get("SECRET_KEY")
 if not secret:
     raise RuntimeError("SECRET_KEY not set")
 app.secret_key = secret
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 16 MB upload limit
 csrf = CSRFProtect(app)
-limiter = Limiter(get_remote_address, app=app, default_limits=["60 per minute"])
+RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["1000 per minute"],
+    storage_uri=RATELIMIT_STORAGE_URI,
+)
 
 RUN_TOKEN = os.environ.get("RUN_TOKEN")
 
@@ -67,7 +73,7 @@ ALLOWED_UPLOADS = {".txt"}
 ALLOWED_PAYLOAD = {".json"}
 ALLOWED_DOWNLOADS = {"risultati.txt", "listato.txt"}
 MAX_ITERATIONS = int(os.environ.get("MAX_ITERATIONS", "700000"))
-SIMULATION_TIMEOUT = int(os.environ.get("SIMULATION_TIMEOUT", "60"))
+SIMULATION_TIMEOUT = int(os.environ.get("SIMULATION_TIMEOUT", "3600"))
 MAX_WORKERS = int(os.environ.get("SIM_WORKERS", "2"))
 MAX_QUEUE = int(os.environ.get("SIM_QUEUE", "4"))
 UPLOAD_TTL_SECONDS = 3600  # 1 hour
@@ -83,6 +89,12 @@ PROGRESS_EXPLORA: dict[str, dict] = {}
 EXECUTOR: ProcessPoolExecutor | None = None
 PENDING_FUTURES: dict[str, object] = {}
 PENDING_LOCK = threading.Lock()
+
+
+def _init_worker(progress_dict):
+    global PROGRESS
+    PROGRESS = progress_dict
+
 
 # Unita' di misura di base per alcune variabili note
 UNITS: dict[str, str] = {
@@ -1649,6 +1661,8 @@ if __name__ == "__main__":
     manager = create_manager()
     PROGRESS = manager.dict()
     PROGRESS_EXPLORA = manager.dict()
-    EXECUTOR = ProcessPoolExecutor(max_workers=MAX_WORKERS)
+    EXECUTOR = ProcessPoolExecutor(
+        max_workers=MAX_WORKERS, initializer=_init_worker, initargs=(PROGRESS,)
+    )
     cleanup_uploads()
-    app.run(debug=False)  # o False in produzione
+    app.run(debug=True)  # o False in produzione
