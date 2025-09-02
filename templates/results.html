@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <link rel="icon" type="image/jpeg" href="{{ url_for('favicon_jpg') }}" sizes="32x32" />
     <link rel="shortcut icon" type="image/jpeg" href="{{ url_for('favicon_jpg') }}" />
     <title>MC-Impact - Risultati</title>
@@ -491,7 +492,12 @@
       if (btnTermina) {
         btnTermina.addEventListener("click", async () => {
           try {
-            await fetch(`/api/esplora_cancel/${runId}`, { method: "POST" });
+            const token = document.querySelector('meta[name="csrf-token"]').content;
+            await fetch(`/api/esplora_cancel/${runId}`, {
+              method: "POST",
+              headers: { 'X-CSRFToken': token },
+              credentials: 'same-origin'
+            });
             const pinf = document.getElementById("esploraProgInfo");
             if (pinf) pinf.textContent = "Interruzione richiesta...";
           } catch (e) { /* ignore */ }
@@ -499,6 +505,7 @@
       }
 
       btnEsplora.addEventListener('click', async ()=>{
+        const token = document.querySelector('meta[name="csrf-token"]').content;
         const m = document.getElementById('selMetric').value;
         const it = parseInt(document.getElementById('itMax').value||'20');
         const ps = parseFloat(document.getElementById('itPasso').value||'1');
@@ -518,7 +525,11 @@
         try {
           const res = await fetch(`/api/esplora/${runId}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': token
+            },
+            credentials: 'same-origin',
             body: JSON.stringify({
               metrica: m,
               max_iter: it,
@@ -527,12 +538,15 @@
               vars: (document.getElementById("selVars") ? Array.from(document.getElementById("selVars").selectedOptions).map(o=>o.value) : [])
             })
           });
-          data = await res.json();
-          stopPoll = true;
           if (!res.ok) {
-            out.textContent = data.error || 'Errore';
+            stopPoll = true;
+            let err;
+            try { err = await res.json(); } catch (_) { err = {}; }
+            out.textContent = err.error || 'Errore';
             return;
           }
+          data = await res.json();
+          stopPoll = true;
         } catch (e) {
           stopPoll = true;
           out.textContent = 'Errore durante l\'esplorazione';

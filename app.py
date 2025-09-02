@@ -35,7 +35,7 @@ secret = os.environ.get("SECRET_KEY")
 if not secret:
     raise RuntimeError("SECRET_KEY not set")
 app.secret_key = secret
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 16 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB upload limit
 csrf = CSRFProtect(app)
 RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
 limiter = Limiter(
@@ -1070,11 +1070,12 @@ def api_progress(run_id):
 @app.route("/api/esplora_progress/<run_id>")
 @require_token
 def api_esplora_progress(run_id):
+    """Return exploration progress even if the run failed."""
     if not _valid_run_id(run_id):
-        return jsonify({"error": "run non trovato"}), 404
+        return jsonify({"error": "run non trovato", "done": True})
     info = PROGRESS_EXPLORA.get(run_id)
     if not info:
-        return jsonify({"error": "run non trovato"}), 404
+        return jsonify({"error": "run non trovato", "done": True})
     return jsonify(info)
 
 
@@ -1226,6 +1227,10 @@ def _model_montecarlo(parametri_modificati: dict, targets: dict, N: int = 1000):
 def api_esplora(run_id):
     if not _valid_run_id(run_id):
         return jsonify({"error": "run non trovato"}), 404
+
+    # Track progress early so the client can poll for errors
+    PROGRESS_EXPLORA[run_id] = {"error": None, "done": False}
+
     # Parametri di input
     body = request.get_json(silent=True) or {}
     metric = body.get("metrica")
@@ -1246,6 +1251,8 @@ def api_esplora(run_id):
     else:
         payload_path = os.path.join(run_dir, "results_payload.json")
         if not os.path.exists(payload_path):
+            PROGRESS_EXPLORA[run_id]["error"] = "run non trovato"
+            PROGRESS_EXPLORA[run_id]["done"] = True
             return jsonify({"error": "run non trovato"}), 404
         with open(payload_path, "r", encoding="utf-8") as pf:
             payload = json.load(pf)
@@ -1253,6 +1260,8 @@ def api_esplora(run_id):
         targets = payload.get("targets", {})
 
     if not parametri or not targets:
+        PROGRESS_EXPLORA[run_id]["error"] = "parametri o targets mancanti"
+        PROGRESS_EXPLORA[run_id]["done"] = True
         return jsonify({"error": "parametri o targets mancanti"}), 400
     
     # Per l'esplorazione forza sempre alcuni flag a zero
@@ -1260,6 +1269,8 @@ def api_esplora(run_id):
         parametri[k] = [0, 0]
 
     if not metric:
+        PROGRESS_EXPLORA[run_id]["error"] = "metrica non specificata"
+        PROGRESS_EXPLORA[run_id]["done"] = True
         return jsonify({"error": "metrica non specificata"}), 400
 
     # Prepara variabili da espandere: solo quelle con range variabile
@@ -1269,6 +1280,8 @@ def api_esplora(run_id):
     else:
         variabili_da_espandere = candidates
     if not variabili_da_espandere:
+        PROGRESS_EXPLORA[run_id]["error"] = "nessun parametro variabile"
+        PROGRESS_EXPLORA[run_id]["done"] = True
         return jsonify({"error": "nessun parametro variabile"}), 400
 
     ranges_correnti = {k: tuple(parametri[k]) for k in variabili_da_espandere}
@@ -1665,4 +1678,4 @@ if __name__ == "__main__":
         max_workers=MAX_WORKERS, initializer=_init_worker, initargs=(PROGRESS,)
     )
     cleanup_uploads()
-    app.run(debug=True)  # o False in produzione
+    app.run(debug=False)  # o False in produzione
