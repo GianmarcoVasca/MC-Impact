@@ -416,54 +416,55 @@
       fixedField('sec_coords','y2','Y baricentro (veicolo 2)','m', true);
 
       function toggleSections(){
-        const get = n => document.querySelector(`[name='man_${n}']`)?.value || '';
+        function get(name){
+          const el = document.querySelector(`[name='man_${name}']`);
+          return el ? el.value : '';
+        }
         const C  = get('cicloide');
         const CA = get('cicloide_avanzata');
         const CN = get('cicloide_nota');
         const EE = get('energia_EES');
         const ST = get('stima_PDOF');
         const CT = get('chiusura_triangoli');
-        const G  = document.getElementById('man_gdl')?.value || '';
 
-        const show = el => { if (el) el.style.display = '';   };
-        const hide = el => { if (el) el.style.display = 'none';};
+        const gEl = document.getElementById('man_gdl');
+        const G  = gEl ? gEl.value : '';
+
+        // helper per mostrare/nascondere e abilitare/disabilitare i campi di una sezione
+        function setSection(id, enabled){
+          const sec = document.getElementById(id);
+          if (!sec) return;
+          sec.style.display = enabled ? 'block' : 'none';
+          sec.querySelectorAll('input, select, textarea').forEach(inp => {
+            inp.disabled = !enabled;
+            if (!enabled && inp.type !== 'hidden'){
+              if (inp.type === 'checkbox') inp.checked = false;
+              else inp.value = '';
+            }
+          });
+        }
 
         // visibilità blocchi post-urto / energia
-        document.getElementById('sec_post_cicloide').style.display      = (C==='1')  ? 'block':'none';
-        document.getElementById('sec_post_cicloide_av').style.display   = (CA==='1') ? 'block':'none';
-        document.getElementById('sec_post_nocicloide').style.display    = (C==='0')  ? 'block':'none';
-        document.getElementById('sec_post_cicloide_nota').style.display = (CN==='1') ? 'block':'none';
-        document.getElementById('sec_energy_ees').style.display         = (EE==='1') ? 'block':'none';
-        document.getElementById('sec_energy_ed').style.display          = (EE==='0') ? 'block':'none';
+        setSection('sec_post_cicloide', C === '1');
+        setSection('sec_post_cicloide_av', CA === '1');
+        setSection('sec_post_cicloide_nota', CN === '1');
+        setSection('sec_post_nocicloide', C === '0');
+        setSection('sec_energy_ees', EE === '1');
+        setSection('sec_energy_ed', EE === '0');
 
         // coordinate baricentriche: nascondi anche il titolo
         const hideCoords = (G==='2' && CT!=='1' && CA!=='1' && ST!=='1');
-        const secCoords  = document.getElementById('sec_coords');
+        setSection('sec_coords', !hideCoords);
         const rowCoords  = document.getElementById('row_coords');
-        if (secCoords) secCoords.style.display = hideCoords ? 'none' : 'block';
         if (rowCoords) rowCoords.style.display = hideCoords ? 'none' : 'block';
 
         // ====== TARGETS ======
         const rowTargets  = document.getElementById('row_targets'); // titolo "Altri parametri target:"
-        const targetRows  = document.getElementById('targetRows');  // contenitore dei blocchi
-        const pdofBlk     = document.getElementById('tgt_pdof');    // blocco PDOF
-        const omegaBlk    = document.getElementById('tgt_omega');   // blocco ω (solo gdl=3)
-
-        // condizione "almeno una vera"
         const showAnyTarget = (CT === '1' || G === '3' || ST === '1');
-
-        // titolo: visibile SOLO se showAnyTarget
-        showAnyTarget ? show(rowTargets) : hide(rowTargets);
-
-        // contenitore complessivo: visibile SOLO se showAnyTarget
-        showAnyTarget ? show(targetRows) : hide(targetRows);
-
-        // blocchi interni
-        // ω: solo se gdl=3
-        (G === '3') ? show(omegaBlk) : hide(omegaBlk);
-
-        // PDOF: se almeno una condizione vera (stessa condizione del titolo)
-        showAnyTarget ? show(pdofBlk) : hide(pdofBlk);
+        if (rowTargets) rowTargets.style.display = showAnyTarget ? 'block' : 'none';
+        setSection('targetRows', showAnyTarget);
+        setSection('tgt_pdof', showAnyTarget);
+        setSection('tgt_omega', G === '3');
       }
       
       // bind eventi (lascia uguale)

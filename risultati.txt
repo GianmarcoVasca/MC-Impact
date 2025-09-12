@@ -1,0 +1,35 @@
+Combinazione con errore medio più basso:
+
+x1             = 	      -1.8
+y1             = 	      -0.5
+x2             = 	       1.0
+y2             = 	       0.5
+
+theta1_in      = 	     12.45
+theta1_out     = 	     74.56
+theta2_in      = 	     88.94
+theta2_out     = 	     73.06
+
+V1_post        = 	     19.51
+V2_post        = 	     55.25
+V1_pre         = 	     25.55
+V2_pre         = 	     62.92
+
+omega1_post    = 	       0.7
+omega2_post    = 	      2.06
+omega1_pre     = 	       0.0
+omega2_pre     = 	       0.0
+
+Ed             = 	  64642.81
+PDOF_stima     = 	    326.05
+f1             = 	       0.7
+f2             = 	       0.7
+
+J1             = 	   1994.19
+J2             = 	   3267.56
+d_post1        = 	      2.16
+cicloide1      = 	       2.2
+
+d_post2        = 	     17.42
+cicloide2      = 	     17.75
+Ed_target      = 	  65555.56

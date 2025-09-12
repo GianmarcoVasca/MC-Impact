@@ -388,23 +388,23 @@ def intro():
     return render_template("intro.html")
 
 
-@app.route("/logo.png")
+@app.route("/logo.jpg")
 def logo():
-    """Backward-compat route: serve the historical single logo."""
+    """Backward-compat route: serve the historical single logo (JPEG)."""
     path = os.path.join(BASE_DIR, "templates")
-    return send_from_directory(path, "logo.png", as_attachment=False)
+    return send_from_directory(path, "logo.jpg", as_attachment=False)
 
-@app.route("/logo_scritta.png")
+@app.route("/logo_scritta.jpg")
 def logo_scritta():
-    """Serve the left brand image (scritta)."""
+    """Serve the left brand image (scritta) in JPEG format."""
     path = os.path.join(BASE_DIR, "templates")
-    return send_from_directory(path, "logo_scritta.png", as_attachment=False)
+    return send_from_directory(path, "logo_scritta.jpg", as_attachment=False)
 
-@app.route("/logo_cars.png")
+@app.route("/logo_cars.jpg")
 def logo_cars():
-    """Serve the right brand image (cars)."""
+    """Serve the right brand image (cars) in JPEG format."""
     path = os.path.join(BASE_DIR, "templates")
-    return send_from_directory(path, "logo_cars.png", as_attachment=False)
+    return send_from_directory(path, "logo_cars.jpg", as_attachment=False)
 
 @app.route("/bg.png")
 def bg_image():
