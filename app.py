@@ -7,7 +7,8 @@ import math
 import time
 import threading
 import shutil
-from concurrent.futures import ProcessPoolExecutor
+import logging
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from functools import wraps
 
 from flask_wtf.csrf import CSRFProtect, CSRFError
@@ -29,6 +30,8 @@ from multiprocessing.managers import SyncManager
 
 def create_manager():
     return Manager()
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 secret = os.environ.get("SECRET_KEY")
@@ -103,21 +106,50 @@ def _init_worker(progress_dict):
 
 
 def ensure_executor():
-    """Ensure the process pool executor and shared state are initialized."""
+    """Ensure the executor and shared state are initialized."""
     global manager, PROGRESS, PROGRESS_EXPLORA, EXECUTOR
     if EXECUTOR is not None:
         return
     with INIT_LOCK:
         if EXECUTOR is not None:
             return
-        manager = create_manager()
-        PROGRESS = manager.dict()
-        PROGRESS_EXPLORA = manager.dict()
-        EXECUTOR = ProcessPoolExecutor(
-            max_workers=MAX_WORKERS,
-            initializer=_init_worker,
-            initargs=(PROGRESS,),
-        )
+        local_manager: SyncManager | None = None
+        try:
+            local_manager = create_manager()
+            progress_dict = local_manager.dict()
+            progress_explora_dict = local_manager.dict()
+        except Exception:
+            logger.exception("Impossibile creare multiprocessing.Manager, uso dizionari locali")
+            local_manager = None
+            progress_dict = {}
+            progress_explora_dict = {}
+
+        try:
+            if local_manager is not None:
+                executor: ProcessPoolExecutor | ThreadPoolExecutor = ProcessPoolExecutor(
+                    max_workers=MAX_WORKERS,
+                    initializer=_init_worker,
+                    initargs=(progress_dict,),
+                )
+            else:
+                raise RuntimeError("manager non disponibile")
+        except Exception:
+            if local_manager is not None:
+                try:
+                    local_manager.shutdown()
+                except Exception:
+                    pass
+                local_manager = None
+                progress_dict = {}
+                progress_explora_dict = {}
+            logger.exception("ProcessPoolExecutor non disponibile, uso ThreadPoolExecutor")
+            executor = ThreadPoolExecutor(max_workers=max(1, min(MAX_WORKERS, os.cpu_count() or 1)))
+
+        manager = local_manager
+        PROGRESS = progress_dict
+        PROGRESS_EXPLORA = progress_explora_dict
+        EXECUTOR = executor
+
 
 
 # Unita' di misura di base per alcune variabili note
@@ -1032,6 +1064,8 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 @require_token
 def start_async():
     ensure_executor()
+    if EXECUTOR is None:
+        return jsonify({"error": "executor non disponibile"}), 500
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
     run_id = str(uuid.uuid4())
