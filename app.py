@@ -1104,10 +1104,7 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
         PROGRESS[key] = { **PROGRESS.get(key, {}), "error": str(e), "done": True }
 
 
-@app.route("/start", methods=["POST"])
-@csrf.exempt
-@require_token
-def start_async():
+def _handle_start_request():
     try:
         ensure_executor()
     except Exception:
@@ -1194,6 +1191,21 @@ def start_async():
     future.add_done_callback(_done_cb)
 
     return jsonify({"run_id": run_id, "status": "queued"})
+
+@app.route("/start", methods=["POST"])
+@csrf.exempt
+@require_token
+def start_async():
+    return _handle_start_request()
+
+
+@app.route("/dic", methods=["POST"])
+@csrf.exempt
+@require_token
+def legacy_start_async():
+    """Compatibility endpoint for legacy clients expecting /dic."""
+    return _handle_start_request()
+
 
 
 @app.route("/api/progress/<run_id>")
