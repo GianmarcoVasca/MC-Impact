@@ -9,6 +9,7 @@ import threading
 import shutil
 import logging
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from functools import wraps
 
 from flask_wtf.csrf import CSRFProtect, CSRFError
@@ -104,6 +105,49 @@ def _init_worker(progress_dict):
     global PROGRESS
     PROGRESS = progress_dict
 
+def reset_executor(preserve_progress: bool = True):
+    """Shutdown the current executor/manager and optionally keep progress snapshots."""
+    global manager, EXECUTOR, PROGRESS, PROGRESS_EXPLORA
+
+    snapshot_progress: dict[str, dict] = {}
+    snapshot_progress_explora: dict[str, dict] = {}
+
+    if preserve_progress:
+        try:
+            snapshot_progress = dict(PROGRESS.items()) if PROGRESS else {}
+        except Exception:
+            logger.exception("Impossibile copiare PROGRESS prima del reset")
+            snapshot_progress = {}
+        try:
+            snapshot_progress_explora = dict(PROGRESS_EXPLORA.items()) if PROGRESS_EXPLORA else {}
+        except Exception:
+            logger.exception("Impossibile copiare PROGRESS_EXPLORA prima del reset")
+            snapshot_progress_explora = {}
+
+    old_executor = EXECUTOR
+    EXECUTOR = None
+    if old_executor is not None:
+        try:
+            old_executor.shutdown(cancel_futures=True)
+        except Exception:
+            logger.exception("Errore durante shutdown executor")
+
+    old_manager = manager
+    manager = None
+    if old_manager is not None:
+        try:
+            old_manager.shutdown()
+        except Exception:
+            logger.exception("Errore durante shutdown manager")
+
+    if preserve_progress:
+        PROGRESS = snapshot_progress
+        PROGRESS_EXPLORA = snapshot_progress_explora
+    else:
+        PROGRESS = {}
+        PROGRESS_EXPLORA = {}
+
+
 
 def ensure_executor():
     """Ensure the executor and shared state are initialized."""
@@ -113,6 +157,7 @@ def ensure_executor():
     with INIT_LOCK:
         if EXECUTOR is not None:
             return
+
         local_manager: SyncManager | None = None
         try:
             local_manager = create_manager()
@@ -1063,7 +1108,14 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 @csrf.exempt
 @require_token
 def start_async():
-    ensure_executor()
+    try:
+        ensure_executor()
+    except Exception:
+        logger.exception("Impossibile inizializzare l'executor")
+        reset_executor(preserve_progress=False)
+        return jsonify({"error": "executor non disponibile"}), 500
+    if EXECUTOR is None:
+        return jsonify({"error": "executor non disponibile"}), 500
     if EXECUTOR is None:
         return jsonify({"error": "executor non disponibile"}), 500
     override_N = request.form.get("N")
@@ -1102,11 +1154,38 @@ def start_async():
 
     PROGRESS[run_id] = {"current": 0, "total": 0, "started": time.time(), "eta_seconds": None, "done": False}
 
-    with PENDING_LOCK:
-        if len(PENDING_FUTURES) >= MAX_QUEUE:
-            return jsonify({"error": "coda piena"}), 429
-        future = EXECUTOR.submit(_background_run, run_id, dati_path, targets_path, override_N)
-        PENDING_FUTURES[run_id] = future
+    future = None
+    attempts = 0
+    while True:
+        with PENDING_LOCK:
+            if len(PENDING_FUTURES) >= MAX_QUEUE:
+                return jsonify({"error": "coda piena"}), 429
+            try:
+                future = EXECUTOR.submit(_background_run, run_id, dati_path, targets_path, override_N)
+            except BrokenProcessPool:
+                logger.exception("Executor process pool non disponibile durante submit")
+                future = None
+            except Exception:
+                logger.exception("Errore durante l'invio del task all'executor")
+                reset_executor()
+                return jsonify({"error": "executor non disponibile"}), 500
+            else:
+                PENDING_FUTURES[run_id] = future
+                break
+
+        attempts += 1
+        logger.error("Retry inizializzazione executor (tentativo %s)", attempts)
+        reset_executor()
+        try:
+            ensure_executor()
+        except Exception:
+            logger.exception("Reinizializzazione executor fallita")
+            reset_executor(preserve_progress=False)
+            return jsonify({"error": "executor non disponibile"}), 500
+        if EXECUTOR is None or attempts >= 3:
+            return jsonify({"error": "executor non disponibile"}), 500
+
+    assert future is not None
 
     def _done_cb(fut, rid=run_id):
         with PENDING_LOCK:
