@@ -116,7 +116,7 @@ def deltaV(veicolo_1, veicolo_2, Ed, epsilon):
     gamma2 = k2**2 / (k2**2 + h2**2)
 
     # Denominatore comune
-    denom = m1 / gamma1 + m2 / gamma2
+    denom = m2 / gamma1 + m1 / gamma2
 
     # ΔV1 con coeff. restituzione (formula 4.157)
     deltaV1 = np.sqrt((2 * Ed * m2 * (1 + epsilon)) / (m1 * denom * (1 - epsilon)))

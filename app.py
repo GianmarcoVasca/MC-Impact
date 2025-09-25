@@ -10,7 +10,7 @@ import shutil
 from concurrent.futures import ProcessPoolExecutor
 from functools import wraps
 
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -37,6 +37,11 @@ if not secret:
 app.secret_key = secret
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB upload limit
 csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    return jsonify({"error": "csrf"}), 400
+
 RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
 limiter = Limiter(
     get_remote_address,
@@ -72,11 +77,11 @@ def require_token(fn):
 ALLOWED_UPLOADS = {".txt"}
 ALLOWED_PAYLOAD = {".json"}
 ALLOWED_DOWNLOADS = {"risultati.txt", "listato.txt"}
-MAX_ITERATIONS = int(os.environ.get("MAX_ITERATIONS", "700000"))
-SIMULATION_TIMEOUT = int(os.environ.get("SIMULATION_TIMEOUT", "3600"))
-MAX_WORKERS = int(os.environ.get("SIM_WORKERS", "2"))
-MAX_QUEUE = int(os.environ.get("SIM_QUEUE", "4"))
-UPLOAD_TTL_SECONDS = 3600  # 1 hour
+MAX_ITERATIONS = 2000000
+SIMULATION_TIMEOUT = 7200 # 2 hour
+MAX_WORKERS = 10
+MAX_QUEUE = 20
+UPLOAD_TTL_SECONDS = 7200  # 2 hour
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "web_uploads")
@@ -87,6 +92,7 @@ manager: SyncManager | None = None
 PROGRESS: dict[str, dict] = {}
 PROGRESS_EXPLORA: dict[str, dict] = {}
 EXECUTOR: ProcessPoolExecutor | None = None
+INIT_LOCK = threading.Lock()
 PENDING_FUTURES: dict[str, object] = {}
 PENDING_LOCK = threading.Lock()
 
@@ -94,6 +100,24 @@ PENDING_LOCK = threading.Lock()
 def _init_worker(progress_dict):
     global PROGRESS
     PROGRESS = progress_dict
+
+
+def ensure_executor():
+    """Ensure the process pool executor and shared state are initialized."""
+    global manager, PROGRESS, PROGRESS_EXPLORA, EXECUTOR
+    if EXECUTOR is not None:
+        return
+    with INIT_LOCK:
+        if EXECUTOR is not None:
+            return
+        manager = create_manager()
+        PROGRESS = manager.dict()
+        PROGRESS_EXPLORA = manager.dict()
+        EXECUTOR = ProcessPoolExecutor(
+            max_workers=MAX_WORKERS,
+            initializer=_init_worker,
+            initargs=(PROGRESS,),
+        )
 
 
 # Unita' di misura di base per alcune variabili note
@@ -424,6 +448,7 @@ def favicon_jpg():
     return send_from_directory(path, "favicon.jpg", as_attachment=False, mimetype="image/jpeg")
 
 @app.route("/api/cancel/<run_id>", methods=["POST"])
+@csrf.exempt
 @require_token
 def api_cancel(run_id):
     if not _valid_run_id(run_id) or run_id not in PROGRESS:
@@ -1003,8 +1028,10 @@ def _background_run(run_id: str, dati_path: str, targets_path: str, override_N: 
 
 
 @app.route("/start", methods=["POST"])
+@csrf.exempt
 @require_token
 def start_async():
+    ensure_executor()
     override_N = request.form.get("N")
     override_N = int(override_N) if (override_N and str(override_N).isdigit()) else None
     run_id = str(uuid.uuid4())
@@ -1223,6 +1250,7 @@ def _model_montecarlo(parametri_modificati: dict, targets: dict, N: int = 1000):
 
 
 @app.route("/api/esplora/<run_id>", methods=["POST"])
+@csrf.exempt
 @require_token
 def api_esplora(run_id):
     if not _valid_run_id(run_id):
@@ -1514,6 +1542,7 @@ def api_esplora(run_id):
 
 
 @app.route("/api/esplora_cancel/<run_id>", methods=["POST"])
+@csrf.exempt
 @require_token
 def api_esplora_cancel(run_id):
     if not _valid_run_id(run_id):
@@ -1671,11 +1700,6 @@ def _build_manual_files_from_form(form) -> tuple[str, str]:
 
 if __name__ == "__main__":
     freeze_support()
-    manager = create_manager()
-    PROGRESS = manager.dict()
-    PROGRESS_EXPLORA = manager.dict()
-    EXECUTOR = ProcessPoolExecutor(
-        max_workers=MAX_WORKERS, initializer=_init_worker, initargs=(PROGRESS,)
-    )
+    ensure_executor()
     cleanup_uploads()
     app.run(debug=False)  # o False in produzione

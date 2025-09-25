@@ -54,8 +54,6 @@ def scrivi_risultati_su_file(df, riga, nome_file="listato.txt"):
         f.write("Combinazione con errore medio più basso:\n")
         for col in df.columns:
             valore = riga[col]
-            if isinstance(valore, (int, float)):
-                valore = round(valore, 2)
             f.write(f"{col} = {valore}\n")
 
 def barra_avanzamento(i, N, eta_str):
@@ -85,7 +83,7 @@ def scrivi_risultati_formattati(df, riga, nome_file="risultati.txt"):
 
                 # Gestione sicura del tipo di valore
                 if isinstance(valore, (int, float)):
-                    valore_str = f"{round(valore, 2):>10}"
+                    valore_str = str(valore)
                 elif hasattr(valore, "__iter__") and not isinstance(valore, str):
                     valore_str = str(list(valore))
                 else:

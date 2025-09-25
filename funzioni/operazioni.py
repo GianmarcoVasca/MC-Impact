@@ -182,6 +182,10 @@ def calcoli(params, targets):
         if not best1 or np.isnan(best1[0]) or np.isnan(best1[1]) or not best2 or np.isnan(best2[0]) or np.isnan(best2[1]):
             errore_chiusura = 10 #basta maggiore di 1
             assegna_parametro(errors, 'errore_chiusura', errore_chiusura)
+        elif (not np.isfinite(min_err1)) or (not np.isfinite(min_err2)) \
+            or (min_err1 > 0.5) or (min_err2 > 0.5):
+            errore_chiusura = 10
+            assegna_parametro(errors, 'errore_chiusura', errore_chiusura)
 
         # Aggiorna i triangoli di velocità
         V1_post = best1[0]
@@ -227,5 +231,9 @@ def calcoli(params, targets):
         scostamento_max = np.maximum(scostamento1, scostamento2)
         errore_scostamento = scostamento_max/0.1
         assegna_parametro(errors, 'errore_scostamento', errore_scostamento)
+
+        # DEBUG
+        #assegna_parametro(results, 'h1', deltaV1)
+        #assegna_parametro(results, 'h2', deltaV2)
 
     return results, errors
